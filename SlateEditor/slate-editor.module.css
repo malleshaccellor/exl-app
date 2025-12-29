@@ -1,0 +1,340 @@
+.editorContainer {
+  display: flex;
+  width: 100%;
+  position: relative;
+}
+
+.editorArea {
+  position: relative;
+  width: 100%;
+}
+
+.editableArea {
+  padding: 20px;
+  height: 600px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background-color: rgba(var(--color-white-rgb), 0.8);
+  padding-right: 320px;
+}
+
+.editableArea:focus,
+.editableArea:active,
+.editableArea:target,
+.editableArea:hover {
+  outline: none;
+}
+
+.toolbarContainer {
+  background-color: rgba(var(--color-secondary-rgb), 0.05);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+}
+
+.toolbarContainer .inlineMarks {
+  display: flex;
+  background-color: var(--color-white);
+  border: 1px solid rgba(var(--color-secondary-rgb), 0.5);
+  border-radius: 4px;
+  margin-left: 4px;
+}
+
+.toolbarContainer .inlineMarks .divider {
+  width: 1px;
+  background-color: rgba(var(--color-secondary-rgb), 0.5);
+}
+
+.toolbarContainer .inlineMarks button {
+  padding: 7px;
+}
+
+.toolbarContainer .inlineMarks button,
+.toolbarContainer .inlineMarks button:hover,
+.toolbarContainer .inlineMarks button:active,
+.toolbarContainer .inlineMarks button:focus {
+  border-radius: 0;
+  border: none;
+  background-color: transparent;
+}
+
+.toolbarContainer .saveButtonContainer {
+  margin-left: auto;
+}
+
+.toolbarContainer .saveButtonContainer button {
+  padding: 6px 12px;
+}
+
+.floatingToolbar {
+  position: absolute;
+  z-index: 1000;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+.floatingToolbar .addCommentButton {
+  background: var(--color-white);
+  padding: 0;
+}
+
+.floatingToolbar .addCommentButton:hover {
+  background: var(--color-white);
+}
+
+.floatingToolbar .commentInput {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  resize: none;
+  border: 2px solid #001e5b;
+  border-radius: 8px;
+  background-color: var(--color-white);
+  padding: 2px;
+  overflow: hidden;
+}
+
+.floatingToolbar .commentInput::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 2px;
+  bottom: 2px;
+  border: 1px solid #5c5c5c;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.floatingToolbar .commentInput textarea {
+  width: 100%;
+  resize: none;
+  outline: none;
+  border: none;
+  font-size: 0.875em;
+  color: var(--text-black);
+  font-family: inherit;
+  height: 100%;
+  padding: 5px;
+  padding-bottom: 20px;
+}
+
+.floatingToolbar .sendButton {
+  margin-left: auto;
+  background-color: var(--color-primary);
+  width: 20px;
+  height: 20px;
+  margin-bottom: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.floatingToolbar .sendButton:hover,
+.floatingToolbar .sendButton:active,
+.floatingToolbar .sendButton:focus {
+  background-color: var(--color-primary);
+}
+
+.commentSidebar {
+  position: absolute;
+  right: 0;
+  top: 5px;
+  width: 280px;
+  border: 1px solid rgba(var(--color-secondary-rgb), 0.1);
+  box-sizing: border-box;
+  background-color: var(--color-white);
+  border-radius: 6px;
+  box-shadow: 0px 4px 12px 0px rgba(var(--color-secondary-rgb), 0.1);
+}
+
+.commentSidebarHeader {
+  padding: 10px 16px;
+  padding-right: 10px;
+  border-bottom: 1px solid rgba(var(--color-secondary-rgb), 0.1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.commentSidebarHeader .commentTitle {
+  font-size: 1em;
+  line-height: 24px;
+  color: var(--text-black);
+  font-weight: 500;
+}
+
+.commentSidebarHeader .headerActions {
+  display: flex;
+}
+
+.commentSidebarHeader .headerActions button {
+  padding: 4px;
+}
+
+.noComments {
+  font-size: 1em;
+  color: rgba(var(--color-secondary-rgb), 0.5);
+  padding: 16px;
+}
+
+.commentSidebar .commentsList {
+  overflow-y: auto;
+}
+
+.commentSidebar .commentRow {
+  padding: 16px;
+  border-bottom: 1px solid rgba(var(--color-secondary-rgb), 0.2);
+}
+
+.commentSidebar .commentRow:last-child {
+  border-bottom: none;
+}
+
+.commentSidebar .commentRow:nth-child(even) {
+  background-color: rgba(var(--color-secondary-rgb), 0.05);
+}
+
+.commentSidebar .commentCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commentCard .commentAuthor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.commentCard .commentAuthor .authorName {
+  font-size: 1em;
+  font-weight: 500;
+  line-height: 24px;
+  color: var(--text-black);
+}
+
+.commentCard .commentAuthor .time {
+  font-size: 0.875em;
+  color: rgba(var(--color-secondary-rgb), 0.6);
+}
+
+.commentCard .commentText {
+  font-size: 0.9em;
+  line-height: 20px;
+  color: rgba(var(--text-black-rgb), 0.9);
+}
+
+.commentCard .commentActions {
+  margin-left: auto;
+  margin-right: -5px;
+}
+
+.commentCard .commentActions button {
+  padding: 4px;
+  font-size: 0.875em;
+}
+
+.repliesSection {
+  display: flex;
+  gap: 8px;
+  flex-direction: column;
+}
+
+.replyCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.actionMenu ul li {
+  font-size: 0.875em;
+}
+
+.replyInput {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.replyButtonContainer {
+  margin: 0;
+}
+
+.replyButtonContainer button {
+  padding: 0;
+  font-size: 0.875em;
+  line-height: 20px;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.replyButtonContainer button:hover,
+.replyButtonContainer button:active,
+.replyButtonContainer button:focus {
+  background-color: transparent;
+}
+
+.replyInput {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  resize: none;
+  border: 2px solid #001e5b;
+  border-radius: 8px;
+  background-color: var(--color-white);
+  padding: 2px;
+  overflow: hidden;
+}
+
+.replyInput::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 2px;
+  bottom: 2px;
+  border: 1px solid #5c5c5c;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.replyInput textarea {
+  width: 100%;
+  resize: none;
+  outline: none;
+  border: none;
+  font-size: 0.875em;
+  color: var(--text-black);
+  font-family: inherit;
+  height: 100%;
+  padding: 5px;
+  padding-bottom: 20px;
+}
+
+.replyInput .sendButton {
+  margin-left: auto;
+  background-color: var(--color-primary);
+  width: 20px;
+  height: 20px;
+  margin-bottom: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.replyInput .sendButton:hover,
+.replyInput .sendButton:active,
+.replyInput .sendButton:focus {
+  background-color: var(--color-primary);
+}
