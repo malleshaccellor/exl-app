@@ -110,28 +110,59 @@ export const SlateEditor = () => {
 
   const renderElement = useCallback(
     ({ attributes, children, element }: any) => {
-      const style = { textAlign: element.align || "left" };
+      const style = {
+        textAlign: element.align || "left",
+        paddingLeft: `${element.indent * 24}px`,
+        fontSize: `${element.fontSize}px`,
+      };
 
       switch (element.type) {
         case "heading-1":
-          return <h1 {...attributes}>{children}</h1>;
+          return (
+            <h1 {...attributes} style={style}>
+              {children}
+            </h1>
+          );
         case "heading-2":
-          return <h2 {...attributes}>{children}</h2>;
+          return (
+            <h2 {...attributes} style={style}>
+              {children}
+            </h2>
+          );
         case "heading-3":
-          return <h3 {...attributes}>{children}</h3>;
+          return (
+            <h3 {...attributes} style={style}>
+              {children}
+            </h3>
+          );
 
         case "bulleted-list":
-          return <ul {...attributes}>{children}</ul>;
+          return (
+            <ul {...attributes} style={style}>
+              {children}
+            </ul>
+          );
         case "numbered-list":
-          return <ol {...attributes}>{children}</ol>;
+          return (
+            <ol {...attributes} style={style}>
+              {children}
+            </ol>
+          );
         case "list-item":
-          return <li {...attributes}>{children}</li>;
+          return (
+            <li {...attributes} style={style}>
+              {children}
+            </li>
+          );
 
         case "block-quote":
           return (
             <blockquote
               {...attributes}
-              style={{ borderLeft: "3px solid #ccc", paddingLeft: 12 }}
+              style={{
+                borderLeft: "3px solid #ccc",
+                ...style,
+              }}
             >
               {children}
             </blockquote>
@@ -139,7 +170,14 @@ export const SlateEditor = () => {
 
         case "code-block":
           return (
-            <pre {...attributes} style={{ background: "#f5f5f5", padding: 12 }}>
+            <pre
+              {...attributes}
+              style={{
+                background: "#f5f5f5",
+                padding: 12,
+                ...style,
+              }}
+            >
               <code>{children}</code>
             </pre>
           );
