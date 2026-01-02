@@ -12,7 +12,7 @@ type Props = {
 };
 
 const TOOLBAR_WIDTH = 260;
-const TOOLBAR_HEIGHT = 24;
+const TOOLBAR_HEIGHT = 94;
 const OFFSET = 8;
 const EDGE_PADDING = 12;
 
@@ -22,24 +22,30 @@ export const FloatingCommentToolbar = ({
   onAddComment,
 }: Props) => {
   const ref = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+
   const [text, setText] = useState("");
+  const [textAreaOpen, setTextAreaOpen] = useState(false);
   const [style, setStyle] = useState<React.CSSProperties | null>(null);
 
+  const selection = editor.selection;
+  const hasExpandedSelection = !!selection && Range.isExpanded(selection);
+
+  if (!hasExpandedSelection && textAreaOpen) {
+    setTextAreaOpen(false);
+  }
+
   useLayoutEffect(() => {
-    const selection = editor.selection;
+    if (!hasExpandedSelection) return;
+
     const container = containerRef.current;
     const toolbar = ref.current;
+    if (!container || !toolbar) return;
 
-    if (!selection || !Range.isExpanded(selection) || !container) {
-      return;
-    }
-
-    const domRange = ReactEditor.toDOMRange(editor, selection);
+    const domRange = ReactEditor.toDOMRange(editor, selection!);
     const rangeRect = domRange.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
 
-    const toolbarWidth = toolbar?.offsetWidth ?? TOOLBAR_WIDTH;
+    const toolbarWidth = toolbar.offsetWidth ?? TOOLBAR_WIDTH;
 
     const spaceAbove = rangeRect.top - containerRect.top;
     const spaceBelow = containerRect.bottom - rangeRect.bottom;
@@ -58,43 +64,71 @@ export const FloatingCommentToolbar = ({
     left = Math.min(Math.max(left, minLeft), maxLeft);
 
     setStyle({ top, left });
-  }, [editor.selection, containerRef, open, editor]);
+  }, [hasExpandedSelection, selection, editor, containerRef]);
 
-  if (!style) return null;
+  useLayoutEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setTextAreaOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  if (!hasExpandedSelection) return null;
 
   return (
-    <div ref={ref} style={style} className={styles.floatingToolbar}>
-      {!open ? (
-        <IconButton
-          size="small"
-          className={styles.addCommentButton}
-          onMouseDown={(e) => {
-            e.preventDefault();
-            setOpen(true);
-          }}
-        >
-          <SVG src="/icons/editor/ic_chat-circle.svg" />
-        </IconButton>
-      ) : (
+    <div
+      ref={ref}
+      style={style ?? { visibility: "hidden" }}
+      className={styles.floatingToolbar}
+      contentEditable={false}
+      suppressContentEditableWarning
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
+      <IconButton
+        size="small"
+        className={styles.addCommentButton}
+        disableFocusRipple
+        disableRipple
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          ReactEditor.focus(editor);
+          setTextAreaOpen((v) => !v);
+        }}
+      >
+        <SVG src="/icons/editor/ic_chat-circle.svg" />
+      </IconButton>
+
+      {textAreaOpen && (
         <div
           onMouseDown={(e) => e.preventDefault()}
           className={styles.commentInput}
         >
           <textarea
             autoFocus
-            name="add-comment"
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Add comment…"
             rows={2}
           />
+
           <IconButton
             className={styles.sendButton}
+            disabled={!text.trim()}
             onMouseDown={(e) => {
               e.preventDefault();
               onAddComment(text);
               setText("");
-              setOpen(false);
+              setTextAreaOpen(false);
             }}
           >
             <SVG src="/icons/editor/ic_send.svg" />

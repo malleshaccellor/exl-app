@@ -69,8 +69,10 @@
 .floatingToolbar {
   position: absolute;
   z-index: 1000;
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   border-radius: 10px;
+  display: flex;
+  align-items: flex-end;
+  height: 94px;
 }
 
 .floatingToolbar .addCommentButton {

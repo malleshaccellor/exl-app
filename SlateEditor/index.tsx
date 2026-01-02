@@ -16,6 +16,7 @@ import Toolbar from "./Toolbar";
 import { markdownToSlate } from "./markdownToSlate";
 import FloatingCommentToolbar from "./FloatingCommentToolbar";
 import styles from "./slate-editor.module.css";
+import { Transforms } from "slate";
 
 const markdownFromApi = `
 # User Story 1
