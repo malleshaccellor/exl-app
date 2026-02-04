@@ -16,9 +16,7 @@ import {
   TableRow,
 } from "@mui/material";
 
-/* ---------------------------------- */
-/* Helpers */
-/* ---------------------------------- */
+/* -------------------- helpers -------------------- */
 
 const default_columns = [
   { key: "Action_Item", label: "Action" },
@@ -38,9 +36,7 @@ const normalizeValue = (val: any) => {
   return JSON.stringify(val);
 };
 
-/* ---------------------------------- */
-/* Types */
-/* ---------------------------------- */
+/* -------------------- types -------------------- */
 
 type ActionLogTableProps = {
   rows: Record<string, any>[];
@@ -55,17 +51,17 @@ type ActionLogTableProps = {
 export type storedCommentsType = {
   id?: string;
   position: {
-    left: number | string;
-    top: number | string;
+    left: number;
+    top: number;
   };
   rowIndex: number;
   colField: string;
   text: string;
   comment: string;
-  time: any;
+  time: string;
 };
 
-export type selectionType = {
+type SelectionState = {
   position: {
     left: number;
     top: number;
@@ -75,9 +71,7 @@ export type selectionType = {
   text: string;
 };
 
-/* ---------------------------------- */
-/* Component */
-/* ---------------------------------- */
+/* -------------------- component -------------------- */
 
 export const ActionLogTable = ({
   rows,
@@ -90,35 +84,35 @@ export const ActionLogTable = ({
 }: ActionLogTableProps) => {
   const dispatch = useAppDispatch();
 
-  const [selection, setSelection] = useState<selectionType | null>(null);
+  const [selection, setSelection] = useState<SelectionState | null>(null);
   const [storedComments, setStoredComments] = useState<storedCommentsType[]>([]);
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
 
-  const containerRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const activeSpanRef = useRef<HTMLSpanElement | null>(null);
 
-  const getCommentsData = useAppSelector((state) => state.comments.comments);
-  const uploadCommentData = useAppSelector(
+  const commentsState = useAppSelector((state) => state.comments.comments);
+  const addCommentState = useAppSelector(
     (state) => state.comments.addComment
   );
   const usersDetails = useAppSelector((state) => state.users.userDetails);
 
-  /* ---------------------------------- */
-  /* Fetch comments */
-  /* ---------------------------------- */
+  /* -------------------- fetch comments -------------------- */
 
   useEffect(() => {
-    dispatch(fetchComments(userStoryJobId));
-  }, [uploadCommentData?.data]);
+    if (userStoryJobId) {
+      dispatch(fetchComments(userStoryJobId));
+    }
+  }, [dispatch, userStoryJobId, addCommentState?.data]);
 
   useEffect(() => {
-    if (getCommentsData?.jobId !== userStoryJobId) {
+    if (commentsState?.jobId !== userStoryJobId) {
       setStoredComments([]);
       return;
     }
 
     setStoredComments(
-      getCommentsData?.data.map((com) => ({
+      commentsState?.data.map((com: any) => ({
         id: com.id,
         position: com.position,
         rowIndex: com.rowIndex,
@@ -126,13 +120,11 @@ export const ActionLogTable = ({
         text: com.text,
         comment: com.comment,
         time: com.createdAt,
-      }))
+      })) || []
     );
-  }, [getCommentsData, userStoryJobId]);
+  }, [commentsState, userStoryJobId]);
 
-  /* ---------------------------------- */
-  /* Selection + Highlight Logic */
-  /* ---------------------------------- */
+  /* -------------------- selection helpers -------------------- */
 
   const clearActiveSpan = () => {
     if (!activeSpanRef.current) return;
@@ -154,14 +146,12 @@ export const ActionLogTable = ({
 
     clearActiveSpan();
 
-    // Wrap selected text in temporary span
     const span = document.createElement("span");
     span.className = styles["comment-highlight-active"];
     span.textContent = selectedText;
 
     range.deleteContents();
     range.insertNode(span);
-
     activeSpanRef.current = span;
 
     const rect = span.getBoundingClientRect();
@@ -180,14 +170,11 @@ export const ActionLogTable = ({
     selectionObj.removeAllRanges();
   };
 
-  /* ---------------------------------- */
-  /* Add Comment */
-  /* ---------------------------------- */
+  /* -------------------- add comment -------------------- */
 
   const sendComment = (text: string) => {
     if (!selection || !activeSpanRef.current) return;
 
-    // Convert active highlight → permanent
     activeSpanRef.current.className = styles["comment-highlight"];
 
     const comment: storedCommentsType = {
@@ -220,9 +207,7 @@ export const ActionLogTable = ({
     setSelection(null);
   };
 
-  /* ---------------------------------- */
-  /* Escape = cancel */
-  /* ---------------------------------- */
+  /* -------------------- escape to cancel -------------------- */
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -238,9 +223,7 @@ export const ActionLogTable = ({
   if (!rows?.length) return null;
   const cols = columns ?? default_columns;
 
-  /* ---------------------------------- */
-  /* Render */
-  /* ---------------------------------- */
+  /* -------------------- render -------------------- */
 
   return (
     <>
@@ -261,18 +244,37 @@ export const ActionLogTable = ({
           <TableBody>
             {rows.map((row, idx) => (
               <TableRow key={idx}>
-                {cols.map((col) => (
-                  <TableCell
-                    key={col.key}
-                    onMouseUp={() => handleMouseUp(idx, col.key)}
-                    style={{
-                      cursor: showComments ? "text" : "default",
-                      userSelect: showComments ? "text" : "none",
-                    }}
-                  >
-                    {normalizeValue(row?.[col.key])}
-                  </TableCell>
-                ))}
+                {cols.map((col) =>
+                  isEditing ? (
+                    <TableCell key={col.key}>
+                      <span
+                        contentEditable={!!onCellChange}
+                        suppressContentEditableWarning
+                        onBlur={(e) =>
+                          onCellChange?.(
+                            idx,
+                            col.key,
+                            e.currentTarget.textContent || ""
+                          )
+                        }
+                        style={{ outline: "none", display: "block" }}
+                      >
+                        {normalizeValue(row?.[col.key])}
+                      </span>
+                    </TableCell>
+                  ) : (
+                    <TableCell
+                      key={col.key}
+                      onMouseUp={() => handleMouseUp(idx, col.key)}
+                      style={{
+                        cursor: showComments ? "text" : "default",
+                        userSelect: showComments ? "text" : "none",
+                      }}
+                    >
+                      {normalizeValue(row?.[col.key])}
+                    </TableCell>
+                  )
+                )}
               </TableRow>
             ))}
           </TableBody>
@@ -295,7 +297,6 @@ export const ActionLogTable = ({
           containerRef={containerRef}
           position={selection.position}
           onAddComment={sendComment}
-          onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
         />
       )}
     </>
