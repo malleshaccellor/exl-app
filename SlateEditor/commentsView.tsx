@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from "react";
 import CommentSidebar from "../SlateEditor/CommentSidebar";
 import FloatingCommentToolbar from "../SlateEditor/FloatingCommentToolbar";
@@ -17,6 +16,10 @@ import {
   TableRow,
 } from "@mui/material";
 
+/* ---------------------------------- */
+/* Helpers */
+/* ---------------------------------- */
+
 const default_columns = [
   { key: "Action_Item", label: "Action" },
   { key: "Requestor", label: "Requestors" },
@@ -34,6 +37,10 @@ const normalizeValue = (val: any) => {
   if (typeof val === "number" || typeof val === "boolean") return String(val);
   return JSON.stringify(val);
 };
+
+/* ---------------------------------- */
+/* Types */
+/* ---------------------------------- */
 
 type ActionLogTableProps = {
   rows: Record<string, any>[];
@@ -56,25 +63,21 @@ export type storedCommentsType = {
   text: string;
   comment: string;
   time: any;
-  replies?: repliesType[];
-};
-
-export type repliesType = {
-  id: string;
-  text: string;
-  createdAt: string;
-  useId: string;
 };
 
 export type selectionType = {
   position: {
-    left: number | string;
-    top: number | string;
+    left: number;
+    top: number;
   };
   rowIndex: number;
   colField: string;
   text: string;
 };
+
+/* ---------------------------------- */
+/* Component */
+/* ---------------------------------- */
 
 export const ActionLogTable = ({
   rows,
@@ -86,21 +89,23 @@ export const ActionLogTable = ({
   onCommentsWindowClose,
 }: ActionLogTableProps) => {
   const dispatch = useAppDispatch();
+
   const [selection, setSelection] = useState<selectionType | null>(null);
-  const [showCommentBox, setShowCommentBox] = useState<boolean | undefined>(
-    showComments,
-  );
-  const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
-    [],
-  );
+  const [storedComments, setStoredComments] = useState<storedCommentsType[]>([]);
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
-  const containerRef = useRef<HTMLDivElement>(
-    null,
-  ) as React.RefObject<HTMLDivElement>;
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const activeSpanRef = useRef<HTMLSpanElement | null>(null);
+
   const getCommentsData = useAppSelector((state) => state.comments.comments);
   const uploadCommentData = useAppSelector(
-    (state) => state.comments.addComment,
+    (state) => state.comments.addComment
   );
+  const usersDetails = useAppSelector((state) => state.users.userDetails);
+
+  /* ---------------------------------- */
+  /* Fetch comments */
+  /* ---------------------------------- */
 
   useEffect(() => {
     dispatch(fetchComments(userStoryJobId));
@@ -111,111 +116,139 @@ export const ActionLogTable = ({
       setStoredComments([]);
       return;
     }
-    const existingComments = getCommentsData?.data.map((com) => ({
-      id: com.id,
-      position: {
-        left: com.position.left,
-        top: com.position.top,
-      },
-      rowIndex: com.rowIndex,
-      colField: com.colField,
-      text: com.text,
-      comment: com.comment,
-      time: com.createdAt,
 
-      replies: com.replies.map((reply: repliesType) => ({
-        id: reply?.id,
-        text: reply?.text,
-        createdAt: reply?.createdAt,
-        useId: reply?.useId,
-      })),
-    }));
-    setStoredComments(existingComments);
+    setStoredComments(
+      getCommentsData?.data.map((com) => ({
+        id: com.id,
+        position: com.position,
+        rowIndex: com.rowIndex,
+        colField: com.colField,
+        text: com.text,
+        comment: com.comment,
+        time: com.createdAt,
+      }))
+    );
   }, [getCommentsData, userStoryJobId]);
 
-  useEffect(() => {
-    setSelection(null);
-    setShowCommentBox(false);
-  }, [rows]);
+  /* ---------------------------------- */
+  /* Selection + Highlight Logic */
+  /* ---------------------------------- */
 
-  const handleMouseUp = (rowIndex: any, colField: any) => {
+  const clearActiveSpan = () => {
+    if (!activeSpanRef.current) return;
+    const span = activeSpanRef.current;
+    span.replaceWith(document.createTextNode(span.textContent || ""));
+    activeSpanRef.current = null;
+  };
+
+  const handleMouseUp = (rowIndex: number, colField: string) => {
     if (!showComments) return;
-    const selectedText = window.getSelection()?.toString();
 
-    if (!selectedText?.trim()) return;
+    const selectionObj = window.getSelection();
+    if (!selectionObj || selectionObj.rangeCount === 0) return;
 
-    const range = window.getSelection()?.getRangeAt(0);
-    const rect = range?.getBoundingClientRect();
+    const range = selectionObj.getRangeAt(0);
+    const selectedText = range.toString();
+
+    if (!selectedText.trim()) return;
+
+    clearActiveSpan();
+
+    // Wrap selected text in temporary span
+    const span = document.createElement("span");
+    span.className = styles["comment-highlight-active"];
+    span.textContent = selectedText;
+
+    range.deleteContents();
+    range.insertNode(span);
+
+    activeSpanRef.current = span;
+
+    const rect = span.getBoundingClientRect();
+    const OFFSET = 8;
 
     setSelection({
       rowIndex,
       colField,
       text: selectedText,
       position: {
-        top: rect?.top || "" + window.scrollY,
-        left: rect?.right || "" + window.scrollX,
+        left: rect.right + window.scrollX + OFFSET,
+        top: rect.top + rect.height / 2 + window.scrollY,
       },
     });
+
+    selectionObj.removeAllRanges();
   };
 
-  if (!rows?.length) return null;
-  const cols = columns ?? default_columns;
-
-  const usersDetails = useAppSelector((state) => state.users.userDetails);
+  /* ---------------------------------- */
+  /* Add Comment */
+  /* ---------------------------------- */
 
   const sendComment = (text: string) => {
-    if (!selection) return;
+    if (!selection || !activeSpanRef.current) return;
+
+    // Convert active highlight → permanent
+    activeSpanRef.current.className = styles["comment-highlight"];
 
     const comment: storedCommentsType = {
       position: selection.position,
       rowIndex: selection.rowIndex,
-      text: selection.text,
       colField: selection.colField,
+      text: selection.text,
       comment: text,
       time: new Date().toISOString(),
     };
 
     setStoredComments((prev) => [...prev, comment]);
 
-    const addCommentPayload = {
-      commentType: "comment",
-      commentId: "",
-      jobId: userStoryJobId || "",
-      createdById: usersDetails && usersDetails.id,
-      userType: "",
-      comment: text,
-      rowIndex: selection.rowIndex,
-      colField: selection.colField,
-      text: selection.text,
-      position: {
-        left: selection.position.left,
-        top: selection.position.top,
-      },
-    };
-    dispatch(addComments(addCommentPayload));
+    dispatch(
+      addComments({
+        commentType: "comment",
+        commentId: "",
+        jobId: userStoryJobId || "",
+        createdById: usersDetails?.id,
+        userType: "",
+        comment: text,
+        rowIndex: selection.rowIndex,
+        colField: selection.colField,
+        text: selection.text,
+        position: selection.position,
+      })
+    );
+
+    activeSpanRef.current = null;
+    setSelection(null);
   };
 
-  const highlightText = (text: string, highlights: any, comId) => {
-    if (!highlights.length) return text;
-    let result = text;
-    highlights.forEach((h) => {
-      if (!h.text) return;
-      const isActive = h.id === comId;
-      const classname = isActive
-        ? "comment-highlight-active"
-        : "comment-highlight";
-      const regex = new RegExp(`(${h.text})`, "gi");
-      result = result.replace(
-        regex,
-        `<mark class=${styles[classname]}>$1</mark>`,
-      );
-    });
-    return result;
-  };
+  /* ---------------------------------- */
+  /* Escape = cancel */
+  /* ---------------------------------- */
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        clearActiveSpan();
+        setSelection(null);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  if (!rows?.length) return null;
+  const cols = columns ?? default_columns;
+
+  /* ---------------------------------- */
+  /* Render */
+  /* ---------------------------------- */
 
   return (
     <>
-      <TableContainer className={styles.tableContainer} sx={{ minHeight: "60vh", maxHeight: "calc(100vh - 320px)" }}>
+      <TableContainer
+        ref={containerRef}
+        className={styles.tableContainer}
+        sx={{ minHeight: "60vh", maxHeight: "calc(100vh - 320px)" }}
+      >
         <Table>
           <TableHead>
             <TableRow>
@@ -224,63 +257,28 @@ export const ActionLogTable = ({
               ))}
             </TableRow>
           </TableHead>
+
           <TableBody>
             {rows.map((row, idx) => (
               <TableRow key={idx}>
-                {cols.map((col) =>
-                  isEditing ? (
-                    <TableCell key={col.key}>
-                      <span
-                        contentEditable={!!onCellChange}
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          onCellChange?.(
-                            idx,
-                            col.key,
-                            e.currentTarget.textContent,
-                          );
-                        }}
-                        style={{
-                          outline: "none",
-                          display: "block",
-                        }}
-                      >
-                        {normalizeValue(row?.[col.key])}
-                      </span>
-                    </TableCell>
-                  ) : (
-                    <TableCell
-                      key={col.key}
-                      onMouseUp={() => handleMouseUp(idx, col.key)}
-                      style={{
-                        cursor: showComments ? "text" : "default",
-                        userSelect: showComments ? "text" : "none",
-                      }}
-                    >
-                      {showComments ? (
-                        <span
-                          dangerouslySetInnerHTML={{
-                            __html: highlightText(
-                              normalizeValue(row?.[col.key]),
-                              storedComments.filter(
-                                (c) =>
-                                  c.rowIndex === idx && c.colField === col.key,
-                              ),
-                              activeCommentId,
-                            ),
-                          }}
-                        />
-                      ) : (
-                        normalizeValue(row?.[col.key])
-                      )}
-                    </TableCell>
-                  ),
-                )}
+                {cols.map((col) => (
+                  <TableCell
+                    key={col.key}
+                    onMouseUp={() => handleMouseUp(idx, col.key)}
+                    style={{
+                      cursor: showComments ? "text" : "default",
+                      userSelect: showComments ? "text" : "none",
+                    }}
+                  >
+                    {normalizeValue(row?.[col.key])}
+                  </TableCell>
+                ))}
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </TableContainer>
+
       {showComments && (
         <CommentSidebar
           comments={storedComments}
@@ -291,14 +289,13 @@ export const ActionLogTable = ({
           setActiveCommentId={setActiveCommentId}
         />
       )}
+
       {selection && (
         <FloatingCommentToolbar
           containerRef={containerRef}
           position={selection.position}
-          onAddComment={(text) => {
-            if (!selection) return;
-            sendComment(text);
-          }}
+          onAddComment={sendComment}
+          onMouseDown={(e: React.MouseEvent) => e.preventDefault()}
         />
       )}
     </>
