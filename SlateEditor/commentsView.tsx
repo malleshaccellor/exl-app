@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import CommentSidebar from "../SlateEditor/CommentSidebar";
 import FloatingCommentToolbar from "../SlateEditor/FloatingCommentToolbar";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
-import {
-  addComments,
-  fetchComments,
-} from "../../store/reducer/comments/action";
+import { addComments, fetchComments } from "../../store/reducer/comments/action";
 import styles from "./output-generation.module.css";
 import {
   Table,
@@ -71,6 +68,62 @@ type SelectionState = {
   text: string;
 };
 
+/* -------------------- highlightText -------------------- */
+
+const highlightText = (
+  text: string,
+  highlights: storedCommentsType[],
+  activeId?: string
+) => {
+  if (!highlights || !highlights.length) return text;
+
+  const parts: (string | JSX.Element)[] = [];
+  let lastIndex = 0;
+
+  // Build regex from all highlighted texts
+  const regexParts = highlights.map((h) => h.text).filter(Boolean);
+  if (!regexParts.length) return text;
+
+  const regex = new RegExp(`(${regexParts.join("|")})`, "gi");
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const matchText = match[0];
+    const matchStart = match.index;
+
+    if (matchStart > lastIndex) {
+      parts.push(text.slice(lastIndex, matchStart));
+    }
+
+    const highlight = highlights.find(
+      (h) => h.text.toLowerCase() === matchText.toLowerCase()
+    );
+
+    if (highlight) {
+      const isActive = highlight.id === activeId;
+      const className = isActive
+        ? styles["comment-highlight-active"]
+        : styles["comment-highlight"];
+
+      parts.push(
+        <mark key={matchStart} className={className}>
+          {matchText}
+        </mark>
+      );
+    } else {
+      parts.push(matchText);
+    }
+
+    lastIndex = matchStart + matchText.length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts;
+};
+
 /* -------------------- component -------------------- */
 
 export const ActionLogTable = ({
@@ -92,9 +145,7 @@ export const ActionLogTable = ({
   const activeSpanRef = useRef<HTMLSpanElement | null>(null);
 
   const commentsState = useAppSelector((state) => state.comments.comments);
-  const addCommentState = useAppSelector(
-    (state) => state.comments.addComment
-  );
+  const addCommentState = useAppSelector((state) => state.comments.addComment);
   const usersDetails = useAppSelector((state) => state.users.userDetails);
 
   /* -------------------- fetch comments -------------------- */
@@ -271,7 +322,15 @@ export const ActionLogTable = ({
                         userSelect: showComments ? "text" : "none",
                       }}
                     >
-                      {normalizeValue(row?.[col.key])}
+                      <span>
+                        {highlightText(
+                          normalizeValue(row?.[col.key]),
+                          storedComments.filter(
+                            (c) => c.rowIndex === idx && c.colField === col.key
+                          ),
+                          activeCommentId
+                        )}
+                      </span>
                     </TableCell>
                   )
                 )}
