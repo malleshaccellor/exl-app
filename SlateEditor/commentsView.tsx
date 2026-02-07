@@ -1,1 +1,157 @@
-" {\"SAP Meter Serial Number Update Automation\": {\"req_id\": \"REQ-001\", \"RequirementDescription\": \"The system must automate the process of updating meter serial numbers in SAP for both gas and electricity meters. This includes checking for active devices, removing them if necessary, and installing new meters with the correct serial numbers and meter types. The automation should handle different validation rules for gas and electricity meters.\", \"UserStories\": [{\"userstory_id\": \"US-001\", \"Story\": \"As an operations team member, I want to automate SAP meter serial number updates so that I can reduce manual effort and clear the backlog faster.\", \"AcceptanceCriteria\": [\"System must check if there is an active device already attached to the meter point reference\", \"System must remove active devices before proceeding with new installation\", \"System must verify and update the new meter serial number from industry sources\", \"System must select the correct meter type (smart, conventional, or prepayment) during installation\", \"System must handle both gas and electricity meter updates with appropriate validations\"], \"RequirementType\": \"Functional\"}]}, \"Meter Removal Process Automation\": {\"req_id\": \"REQ-002\", \"RequirementDescription\": \"Automate the meter removal process for both standard SAP removals and ONUPD removal scenarios. The system should verify if meters are already removed, and if not, perform removal transactions with appropriate final readings. For ONUPD removals, the system should create and submit removal flows when necessary.\", \"UserStories\": [{\"userstory_id\": \"US-002\", \"Story\": \"As a backlog clearance agent, I want to automate meter removal processes so that I can efficiently process removal cases without manual intervention.\", \"AcceptanceCriteria\": [\"System must check if the meter is already removed before taking action\", \"If meter is still active, removal transaction must be performed with final reading capture\", \"Default values must be entered for final readings when not provided\", \"For ONUPD removals, system must create a removal flow if meter is not already removed\", \"Removal flow must be submitted for processing with appropriate documentation\"], \"RequirementType\": \"Migration\"}]}, \"ONUPD Case Processing Automation\": {\"req_id\": \"REQ-003\", \"RequirementDescription\": \"The system must automate the processing of ONUPD (meter updates not properly applied) cases, including both 'found' corrections and removal scenarios. For 'found' cases, the system must check if the meter serial number is already installed and create market flows when necessary. For removal cases, the system must verify removal status and create removal flows when needed.\", \"UserStories\": [{\"userstory_id\": \"US-003\", \"Story\": \"As an operations team member, I want to automate ONUPD case processing so that I can ensure meter information is correctly synchronized across systems.\", \"AcceptanceCriteria\": [\"System must check if the meter serial number is already attached for ONUPD found cases\", \"System must close the case if the same MSN is already installed\", \"System must create and submit market flows with required details for new installations\", \"System must check if meters are already removed for ONUPD removal cases\", \"System must create and submit removal flows when meters are not yet removed\"], \"RequirementType\": \"Functional\"}]}, \"Exception Handling and Reporting\": {\"req_id\": \"REQ-004\", \"RequirementDescription\": \"The system must implement robust exception handling for the automation process, including detection of login failures, incorrect templates, and missing data fields. The system should notify SMEs via email when exceptions occur, quarantine incorrect files, and provide day-end summary reports to business stakeholders.\", \"UserStories\": [{\"userstory_id\": \"US-004\", \"Story\": \"As a Subject Matter Expert, I want to receive notifications about automation exceptions so that I can address issues promptly and ensure process continuity.\", \"AcceptanceCriteria\": [\"System must detect and handle login failures, incorrect templates, and missing data fields\", \"System must notify SMEs via email when exceptions occur\", \"System must quarantine incorrect input files for review\", \"System must generate and distribute day-end summary reports to business stakeholders\", \"System must escalate unprocessed accounts for manual intervention within 24 hours\"], \"RequirementType\": \"Functional\"}]}, \"Input Data Processing\": {\"req_id\": \"REQ-005\", \"RequirementDescription\": \"The system must process input data from standardized templates containing meter information. Required data includes meter serial numbers, meter types, installation details, meter point reference numbers, and customer identifiers. The system should validate input data and handle exceptions for incorrect or incomplete information.\", \"UserStories\": [{\"userstory_id\": \"US-005\", \"Story\": \"As an operations team member, I want the automation to process standardized input templates so that meter updates can be handled consistently and accurately.\", \"AcceptanceCriteria\": [\"System must read input data from standardized templates in designated folders\", \"System must validate required fields including meter serial numbers, meter types, and reference numbers\", \"System must handle different meter types (smart, conventional, prepayment)\", \"System must flag and report missing or incorrect data\", \"System must process both gas and electricity meter information from the same template format\"], \"RequirementType\": \"Functional\"}]}, \"Exception Handling and Notification\": {\"req_id\": \"REQ-006\", \"RequirementDescription\": \"The system must implement robust exception handling mechanisms with appropriate notifications to ensure timely resolution of errors. This includes identifying common failure scenarios, implementing a quarantine approach for incorrect files, and establishing clear communication channels for exceptions.\", \"UserStories\": [{\"userstory_id\": \"US-006\", \"Story\": \"As a system administrator, I want automated exception notifications so that issues can be addressed promptly without manual monitoring.\", \"AcceptanceCriteria\": [\"SMEs must be notified via email when exceptions occur\", \"Incorrect files must be automatically moved to a quarantine folder\", \"Notification messages must clearly identify the type of exception (login failures, incorrect templates, missing data)\", \"Unprocessed accounts must be flagged for manual intervention within 24 hours\", \"System must log all exceptions with timestamps and error details for troubleshooting\"], \"RequirementType\": \"Non-Functional\"}]}, \"Performance and Workload Management\": {\"req_id\": \"REQ-007\", \"RequirementDescription\": \"The automation solution must effectively handle the specified workload volume and contribute to backlog reduction. The system should be capable of processing approximately 15-20% of the current backlog through bot implementation.\", \"UserStories\": [{\"userstory_id\": \"US-007\", \"Story\": \"As an operations manager, I want the automation solution to handle at least 15% of the backlog so that manual workload is significantly reduced.\", \"AcceptanceCriteria\": [\"Bot must successfully process 15-20% of the backlog cases\", \"System must maintain consistent performance during peak processing periods\", \"Processing time should not exceed current manual processing benchmarks\", \"System must generate performance metrics to measure automation impact\", \"Bot must handle both gas and electricity cases with equal efficiency\"], \"RequirementType\": \"Non-Functional\"}]}, \"Reporting and Monitoring\": {\"req_id\": \"REQ-008\", \"RequirementDescription\": \"The system must provide comprehensive reporting capabilities to track automation performance, exception rates, and backlog reduction progress. This includes day-end summaries for business stakeholders and detailed operational metrics.\", \"UserStories\": [{\"userstory_id\": \"US-008\", \"Story\": \"As a business stakeholder, I want to receive automated day-end summaries so that I can track the progress of backlog reduction without manual data collection.\", \"AcceptanceCriteria\": [\"System must generate daily summary reports at the end of each processing day\", \"Reports must include number of cases processed, success rate, and exception details\", \"Reports must be automatically distributed to designated business stakeholders\", \"Reporting format must be consistent and easily interpretable\", \"System must maintain historical reporting data for trend analysis\"], \"RequirementType\": \"Non-Functional\"}]}, \"Data Validation and Integrity\": {\"req_id\": \"REQ-009\", \"RequirementDescription\": \"The system must ensure data integrity throughout the automation process, validating input data against expected formats and business rules. This includes proper handling of template formats and required fields to prevent processing errors.\", \"UserStories\": [{\"userstory_id\": \"US-009\", \"Story\": \"As a data quality manager, I want the system to validate all input data before processing so that data integrity issues are identified early in the workflow.\", \"AcceptanceCriteria\": [\"System must validate input file format against the defined template structure\", \"All required fields must be checked for completeness before processing begins\", \"Data type validations must be performed for all critical fields (meter serial numbers, reference numbers)\", \"System must reject files with critical data issues rather than attempting partial processing\", \"Validation errors must be clearly documented with specific field-level details\"], \"RequirementType\": \"Non-Functional\"}]}, \"System Integration Reliability\": {\"req_id\": \"REQ-010\", \"RequirementDescription\": \"The automation solution must reliably integrate with multiple systems including SAP, ECOES, Market Flow, and XO Serve, ensuring consistent data exchange and processing across platforms without disruption to existing system operations.\", \"UserStories\": [{\"userstory_id\": \"US-010\", \"Story\": \"As a systems architect, I want reliable integration between all required systems so that data flows seamlessly without manual intervention or system failures.\", \"AcceptanceCriteria\": [\"Integration with SAP must maintain 99.5% uptime during operational hours\", \"System must handle authentication and session management for all integrated applications\", \"Data exchange between systems must be validated for consistency and completeness\", \"Integration failures must trigger immediate notifications with detailed diagnostics\", \"System must gracefully handle temporary unavailability of any integrated application\"], \"RequirementType\": \"Non-Functional\"}]}, \"SAP Meter Serial Number Migration\": {\"req_id\": \"REQ-011\", \"RequirementDescription\": \"Implement an automated solution to migrate and update meter serial numbers in SAP for both gas and electricity meters. The system should verify existing meter installations, perform removals if necessary, and install new meters with correct serial numbers from industry sources. The migration must handle different meter types (smart, conventional, prepayment) and follow proper validation rules.\", \"UserStories\": [{\"userstory_id\": \"US-011\", \"Story\": \"As an operations team member, I want to automate SAP meter serial number updates so that I can reduce manual effort in clearing the Industry Alignment backlog.\", \"AcceptanceCriteria\": [\"System must check if there is an active device already attached to the meter point\", \"If an active device exists, it must be removed before proceeding with new installation\", \"New meter serial number must be verified against industry source data before updating in SAP\", \"Correct meter type (smart, conventional, prepayment) must be selected during installation\", \"Process must handle both gas and electricity meter installations with appropriate validations\"], \"RequirementType\": \"Migration\"}]}, \"ONUPD Market Flow Corrections\": {\"req_id\": \"REQ-012\", \"RequirementDescription\": \"Develop an automated solution to handle ONUPD (meter updates not properly applied) cases requiring market flow corrections. The system should check if the meter serial number is already attached, and if not, create and submit appropriate market flows. The solution must integrate with Market Flow system and ensure XO Serve updates are processed correctly overnight.\", \"UserStories\": [{\"userstory_id\": \"US-012\", \"Story\": \"As an operations specialist, I want to automate ONUPD found corrections so that market flow submissions are processed consistently and accurately.\", \"AcceptanceCriteria\": [\"System must check whether the meter serial number is already attached to the meter point\", \"If MSN is already installed, case should be closed with no further action\", \"If MSN is not installed, system must create a market flow with required details\", \"Market flow must be submitted for overnight processing\", \"XO Serve updates must be verified after market flow processing is complete\"], \"RequirementType\": \"Migration\"}]}, \"Data Migration Exception Handling\": {\"req_id\": \"REQ-013\", \"RequirementDescription\": \"Implement robust exception handling for the meter data migration process. The system should identify and manage common exceptions such as login failures, incorrect templates, or missing data fields. A quarantine approach should be used for incorrect files, with appropriate notifications to SMEs and escalation procedures for unprocessed accounts.\", \"UserStories\": [{\"userstory_id\": \"US-013\", \"Story\": \"As a system administrator, I want comprehensive exception handling for meter data migrations so that errors are properly identified, communicated, and resolved.\", \"AcceptanceCriteria\": [\"System must detect and log common exceptions including login failures and incorrect templates\", \"SMEs must be notified via email when exceptions occur\", \"Incorrect files must be quarantined for further review\", \"Day-end summaries must be shared with business stakeholders\", \"Unprocessed accounts must be escalated for manual intervention within 24 hours\"], \"RequirementType\": \"Migration\"}]}, \"SAP-ECOES Integration\": {\"req_id\": \"REQ-014\", \"RequirementDescription\": \"Integrate SAP with ECOES to enable automated verification and updating of meter serial numbers. The integration should allow the system to retrieve the latest industry meter details from ECOES and update the corresponding records in SAP for both gas and electricity meters, ensuring data consistency across systems.\", \"UserStories\": [{\"userstory_id\": \"US-014\", \"Story\": \"As an operations team member, I want SAP to automatically retrieve meter information from ECOES so that I don't have to manually verify and update meter serial numbers.\", \"AcceptanceCriteria\": [\"System should successfully retrieve meter details from ECOES using meter point reference number\", \"Retrieved data must include meter serial number, meter type, and installation status\", \"System should handle both gas and electricity meter information with appropriate validations\", \"Error handling should be implemented for cases where ECOES data is unavailable or incomplete\", \"All data exchanges must comply with industry data protection standards\"], \"RequirementType\": \"Integration\"}]}, \"Market Flow Integration\": {\"req_id\": \"REQ-015\", \"RequirementDescription\": \"Establish integration between the system and Market Flow to automate the creation and submission of market flows for ONUPD cases. The integration should enable the system to generate appropriate market flows based on the required corrections, submit them for overnight processing, and track their status.\", \"UserStories\": [{\"userstory_id\": \"US-015\", \"Story\": \"As an operations team member, I want the system to automatically create and submit market flows for ONUPD corrections so that I don't have to manually process these cases.\", \"AcceptanceCriteria\": [\"System should generate appropriate market flows based on the type of correction needed (installation or removal)\", \"Market flows must include all required details including meter serial number, meter type, and customer identifiers\", \"Flows should be automatically submitted for overnight processing\", \"System should track the status of submitted flows and report on successful/failed submissions\", \"Integration must maintain secure transmission of customer and meter data\"], \"RequirementType\": \"Integration\"}]}, \"XO Serve Update Integration\": {\"req_id\": \"REQ-016\", \"RequirementDescription\": \"Implement integration with XO Serve to ensure automated updates after market flow processing. The integration should enable the system to verify that XO Serve records are properly updated following overnight market flow processing, and handle exceptions when updates fail.\", \"UserStories\": [{\"userstory_id\": \"US-016\", \"Story\": \"As an operations team member, I want the system to automatically verify and confirm XO Serve updates after market flow processing so that I can ensure data consistency across systems.\", \"AcceptanceCriteria\": [\"System should check XO Serve for updates after overnight market flow processing\", \"Verification should confirm that meter information in XO Serve matches the submitted market flow data\", \"System should flag any discrepancies between submitted data and XO Serve records\", \"Automated notifications should be sent when XO Serve updates fail or are incomplete\", \"Integration must maintain audit trail of all verification attempts and results\"], \"RequirementType\": \"Integration\"}]}, \"Exception Notification System\": {\"req_id\": \"REQ-017\", \"RequirementDescription\": \"Develop an integration between the RPA system and email notification services to automatically alert SMEs and stakeholders about exceptions, processing errors, and daily summaries. The integration should support different notification types based on the severity and nature of the exception.\", \"UserStories\": [{\"userstory_id\": \"US-017\", \"Story\": \"As an SME, I want to receive automated email notifications when exceptions occur in the bot processing so that I can take timely corrective action.\", \"AcceptanceCriteria\": [\"System should send immediate notifications for critical exceptions like login failures or system errors\", \"Notifications must include relevant details about the exception including error type, affected records, and timestamp\", \"System should generate and distribute daily summary reports to business stakeholders\", \"Different notification templates should be used based on exception type and severity\", \"Email integration must comply with company security policies for data transmission\"], \"RequirementType\": \"Integration\"}]}, \"Input Template Processing Integration\": {\"req_id\": \"REQ-018\", \"RequirementDescription\": \"Create an integration between the file system and the RPA bot to enable automated processing of input templates. The integration should allow the bot to monitor designated folders for new input files, validate their format and content, and process them accordingly while handling exceptions for incorrect templates.\", \"UserStories\": [{\"userstory_id\": \"US-018\", \"Story\": \"As an operations team member, I want the bot to automatically detect and process input templates from designated folders so that I don't have to manually trigger the process.\", \"AcceptanceCriteria\": [\"System should monitor designated folders for new input template files at scheduled intervals\", \"Files should be validated for correct format, required fields, and data integrity before processing\", \"Invalid files should be moved to a quarantine folder with appropriate error logging\", \"System should process valid files in sequence according to predefined business rules\", \"File access and processing must comply with data security requirements\"], \"RequirementType\": \"Integration\"}]}, \"Automation Impact Dashboard\": {\"req_id\": \"REQ-019\", \"RequirementDescription\": \"A dashboard to track and measure the impact of RPA automation on the Industry Alignment backlog process. The dashboard should visualize the percentage of workload automated, backlog reduction trends, and compare manual vs. automated processing metrics across different threads (Gas SAP MSN updation, Electricity SAP MSN updation, ONUPD found corrections, and ONUPD removal scenarios).\", \"UserStories\": [{\"userstory_id\": \"US-019\", \"Story\": \"As a business stakeholder, I want to view automation impact metrics so that I can quantify the benefits of bot implementation on backlog reduction.\", \"AcceptanceCriteria\": [\"Dashboard must display the percentage of backlog cleared through automation (target 15-20%)\", \"Data should be aggregated by thread type (Gas SAP, Electricity SAP, ONUPD found, ONUPD removal)\", \"System should handle missing data points with appropriate notifications\", \"Dashboard should refresh daily with the latest processing statistics\", \"Access to detailed metrics should be restricted to management and process owners\"], \"RequirementType\": \"Dashboarding and Reporting\"}]}, \"Exception Monitoring Report\": {\"req_id\": \"REQ-020\", \"RequirementDescription\": \"A comprehensive reporting system to track and categorize exceptions occurring during the automated processing of Industry Alignment cases. The report should capture login failures, template errors, missing data fields, and configuration issues, with detailed breakdowns by exception type and frequency.\", \"UserStories\": [{\"userstory_id\": \"US-020\", \"Story\": \"As an SME, I want to receive detailed exception reports so that I can quickly identify and resolve issues in the automation process.\", \"AcceptanceCriteria\": [\"Report must categorize exceptions by type (login failures, template errors, missing data fields, configuration issues)\", \"Data should include timestamp, exception details, and affected account information\", \"System should highlight recurring exceptions that may indicate systemic issues\", \"Reports should be generated automatically when exceptions occur and compiled in a day-end summary\", \"Exception data should be accessible only to authorized SMEs and support personnel\"], \"RequirementType\": \"Dashboarding and Reporting\"}]}, \"Daily Processing Summary Report\": {\"req_id\": \"REQ-021\", \"RequirementDescription\": \"An end-of-day summary report detailing the processing activities performed by the automation bot across all Industry Alignment threads. The report should include counts of successful transactions, exceptions, and unprocessed accounts requiring manual intervention, with breakdowns by transaction type and system (SAP, Market Flow, XO Serve).\", \"UserStories\": [{\"userstory_id\": \"US-021\", \"Story\": \"As a business stakeholder, I want to receive daily processing summaries so that I can monitor the effectiveness of the automation and plan for manual intervention when needed.\", \"AcceptanceCriteria\": [\"Report must include counts of processed transactions by type (installations, removals, corrections)\", \"Data should be aggregated to show success rates and exception percentages\", \"System should flag accounts requiring manual intervention within 24 hours\", \"Report should be automatically generated and distributed at the end of each business day\", \"Access to detailed account information should be restricted based on user roles\"], \"RequirementType\": \"Dashboarding and Reporting\"}]}, \"Backlog Trend Analysis Dashboard\": {\"req_id\": \"REQ-022\", \"RequirementDescription\": \"A visual dashboard tracking the Industry Alignment backlog trends over time, showing the impact of automation on reducing the overall backlog. The dashboard should display historical data on backlog volume, clearance rates, and projected completion timelines, with the ability to filter by thread type and time period.\", \"UserStories\": [{\"userstory_id\": \"US-022\", \"Story\": \"As a manager, I want to analyze backlog trends over time so that I can assess the long-term effectiveness of the automation initiative and make resource allocation decisions.\", \"AcceptanceCriteria\": [\"Dashboard must visualize backlog volume trends with before/after automation comparison\", \"Data should be presented with weekly and monthly aggregation options\", \"System should calculate projected completion dates based on current processing rates\", \"Dashboard should update weekly with the latest backlog figures\", \"Access to trend analysis should be limited to management and authorized team leads\"], \"RequirementType\": \"Dashboarding and Reporting\"}]}}"
+import { useCallback, useMemo, useState } from "react";
+import { createEditor, type Descendant } from "slate";
+import { Slate, Editable, withReact } from "slate-react";
+import clsx from "clsx";
+import { useSlateStore } from "./hooks/useCommentsStore";
+import Toolbar from "./Toolbar";
+import { markdownToSlate } from "./markdownToSlate";
+import styles from "./slate-editor.module.css";
+
+interface SlateEditorProps {
+  readOnly?: boolean;
+  onClickSaveBtn?: () => void;
+  markdownFromApi?: any;
+}
+
+export const SlateEditor = ({
+  readOnly,
+  onClickSaveBtn,
+  markdownFromApi,
+}: SlateEditorProps) => {
+  const editor = useMemo(() => withReact(createEditor()), []);
+  const { content, setContent } = useSlateStore([]);
+
+  const [editorValue, setEditorValue] = useState<Descendant[]>(markdownFromApi);
+
+  const renderLeaf = useCallback(({ attributes, children, leaf }: any) => {
+    if (leaf.bold) children = <strong>{children}</strong>;
+    if (leaf.italic) children = <em>{children}</em>;
+    if (leaf.underline) children = <u>{children}</u>;
+    if (leaf.strikethrough) children = <s>{children}</s>;
+    if (leaf.code) children = <code>{children}</code>;
+
+    return <span {...attributes}>{children}</span>;
+  }, []);
+
+  const renderElement = useCallback(
+    ({ attributes, children, element }: any) => {
+      const style = {
+        textAlign: element.align || "left",
+        paddingLeft: `${element.indent * 24}px`,
+        fontSize: `${element.fontSize}px`,
+      };
+
+      switch (element.type) {
+        case "heading-1":
+          return (
+            <h1 {...attributes} style={style}>
+              {children}
+            </h1>
+          );
+        case "heading-2":
+          return (
+            <h2 {...attributes} style={style}>
+              {children}
+            </h2>
+          );
+        case "heading-3":
+          return (
+            <h3 {...attributes} style={style}>
+              {children}
+            </h3>
+          );
+
+        case "bulleted-list":
+          return (
+            <ul {...attributes} style={style}>
+              {children}
+            </ul>
+          );
+        case "numbered-list":
+          return (
+            <ol {...attributes} style={style}>
+              {children}
+            </ol>
+          );
+        case "list-item":
+          return (
+            <li {...attributes} style={style}>
+              {children}
+            </li>
+          );
+
+        case "block-quote":
+          return (
+            <blockquote
+              {...attributes}
+              style={{
+                borderLeft: "3px solid #ccc",
+                ...style,
+              }}
+            >
+              {children}
+            </blockquote>
+          );
+
+        case "code-block":
+          return (
+            <pre
+              {...attributes}
+              style={{
+                background: "#f5f5f5",
+                padding: 12,
+                ...style,
+              }}
+            >
+              <code>{children}</code>
+            </pre>
+          );
+        case "table":
+          return (
+            <table>
+              <tbody {...attributes}>{children}</tbody>
+            </table>
+          );
+        case "table-row":
+          return <tr {...attributes}>{children}</tr>;
+        case "table-cell":
+          return <td {...attributes}>{children}</td>;
+        case "paragraph":
+          return <p {...attributes}>{children}</p>;
+        default:
+          return (
+            <p {...attributes} style={style}>
+              {children}
+            </p>
+          );
+      }
+    },
+    [],
+  );
+
+  return (
+    <>
+      <div className={styles.editorContainer}>
+        <div className={styles.editorArea}>
+          <Slate
+            editor={editor}
+            initialValue={editorValue}
+            onChange={() => {
+              setContent(editor.children as Descendant[]);
+            }}
+          >
+            <Toolbar onClickSaveBtn={onClickSaveBtn} buttonLabel="Save" />
+            <Editable
+              renderLeaf={renderLeaf}
+              renderElement={renderElement}
+              readOnly={readOnly}
+              className={clsx(styles.editableArea)}
+            />
+          </Slate>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default SlateEditor;
