@@ -1,13 +1,616 @@
-[{"req_id":"REQ-001","User_Story_No":"<b>US-001</b>","User_Story_Description":"<b>As an HR administrator, I want to configure different types of leave policies so that the</b>y comply with state and federal regulations.","Acceptance_Criteria":"1. System allows configuration of all leave types mentioned in the county policies\n2. System enforces mandatory leave provisions as required by state law\n3. System distinguishes between paid and unpaid leave types\n4. System allows setting different accrual rates for different leave types\n5. System maintains an audit trail of policy changes","Requirement_Type":"Functional"},{"req_id":"REQ-001","User_Story_No":"US-002","User_Story_Description":"As an employee, I want to request time off for various leave types so that I can manage my work-life balance while following county policies.","Acceptance_Criteria":"1. System allows employees to submit leave requests for all available leave types\n2. System displays current leave balances to employees when requesting leave\n3. System validates leave requests against available balances\n4. System notifies appropriate supervisors of pending leave requests\n5. System prevents submission of invalid leave requests","Requirement_Type":"Functional"},{"req_id":"REQ-002","User_Story_No":"US-003","User_Story_Description":"As an HR administrator, I want to track military leave separately from other leave types so that I can ensure compliance with USERRA and state military leave laws.","Acceptance_Criteria":"1. System tracks up to 20 working days of paid military leave per calendar year as required by state law\n2. System allows for continuation of health insurance for up to 24 months for employees on military leave\n3. System maintains employee seniority and benefits during military leave periods\n4. System supports different return-to-work timeframes based on length of military service\n5. System generates reports on military leave usage for compliance purposes","Requirement_Type":"Functional"},{"req_id":"REQ-002","User_Story_No":"US-004","User_Story_Description":"As an employee on military leave, I want my employment status and benefits properly maintained so that my rights are protected according to USERRA and state law.","Acceptance_Criteria":"1. System maintains employee status as 'on military leave' rather than terminated\n2. System preserves accrued benefits from before military service began\n3. System allows employee to use accrued vacation/annual leave during military service if requested\n4. System supports re-employment process based on length of service timeframes\n5. System prevents unauthorized termination within protected periods after return from service","Requirement_Type":"Functional"},{"req_id":"REQ-003","User_Story_No":"US-005","User_Story_Description":"As an HR administrator, I want to track the status of employees placed on leave after an arrest so that I can restore back pay if charges are dropped or the employee is found not guilty.","Acceptance_Criteria":"1. System allows tracking of employees placed on leave due to arrest\n2. System records the outcome of legal proceedings related to the arrest\n3. System calculates back pay owed if charges are dropped or employee is found not guilty\n4. System does not calculate back pay if employee pleads guilty or separates voluntarily\n5. System maintains documentation of arrest, leave status, and case resolution","Requirement_Type":"Functional"},{"req_id":"REQ-004","User_Story_No":"US-006","User_Story_Description":"As an HR administrator, I want to properly categorize and track pregnancy and parental leave so that I ensure compliance with federal and state regulations.","Acceptance_Criteria":"1. System treats pregnancy-related medical leave the same as other temporary medical disabilities\n2. System allows up to four months of leave for adoption, pregnancy, childbirth, and nursing\n3. System maintains employment status, seniority, and benefits during pregnancy/parental leave\n4. System distinguishes between paid and unpaid portions of pregnancy/parental leave\n5. System prevents discrimination based on pregnancy status","Requirement_Type":"Functional"},{"req_id":"REQ-005","User_Story_No":"US-007","User_Story_Description":"As a county employee, I want the leave management system to be available 24/7 so that I can submit leave requests at any time without system downtime.","Acceptance_Criteria":"1. System must maintain 99.9% uptime during business hours (8am-5pm, Monday-Friday)\n2. System response time must not exceed 3 seconds for any transaction\n3. System must handle at least 500 concurrent users without performance degradation\n4. Scheduled maintenance must occur during non-business hours with advance notice to users\n5. System must include redundancy measures to prevent data loss during outages","Requirement_Type":"Non-Functional"},{"req_id":"REQ-006","User_Story_No":"US-008","User_Story_Description":"As a county HR administrator, I want the leave management system to have strong security controls so that employee personal and medical information remains confidential and protected.","Acceptance_Criteria":"1. All data must be encrypted both in transit and at rest using industry-standard encryption protocols\n2. System must implement role-based access controls to restrict information access based on job responsibilities\n3. System must maintain detailed audit logs of all access and changes to employee leave records\n4. System must comply with relevant data protection regulations for handling medical information\n5. Authentication must require multi-factor verification for administrative access","Requirement_Type":"Non-Functional"},{"req_id":"REQ-007","User_Story_No":"US-009","User_Story_Description":"As a county legal officer, I want the leave management system to automatically enforce compliance with all applicable leave laws so that the county avoids legal violations and potential penalties.","Acceptance_Criteria":"1. System must track and enforce FMLA eligibility and entitlements accurately\n2. System must properly handle military leave in accordance with USERRA and state law requirements\n3. System must accommodate pregnancy and parental leave requirements under both federal and state law\n4. System must generate required notifications and documentation for legally mandated leave types\n5. System must be easily updatable when leave laws change","Requirement_Type":"Non-Functional"},{"req_id":"REQ-008","User_Story_No":"US-010","User_Story_Description":"As a county employee with limited technical skills, I want an intuitive leave management interface so that I can easily submit and track my leave requests without specialized training.","Acceptance_Criteria":"1. System must comply with WCAG 2.1 AA accessibility standards\n2. Interface must be navigable using keyboard-only input for users with mobility limitations\n3. System must support screen readers and other assistive technologies\n4. System must use clear, simple language and intuitive navigation\n5. Help documentation must be readily available within the system","Requirement_Type":"Non-Functional"},{"req_id":"REQ-009","User_Story_No":"US-011","User_Story_Description":"As a county department manager, I want to generate detailed leave reports for my team so that I can monitor leave patterns, plan staffing, and ensure policy compliance.","Acceptance_Criteria":"1. System must maintain complete audit trails of all leave transactions and approvals\n2. Reports must be customizable by date range, department, leave type, and employee\n3. System must generate standard reports for common management needs (e.g., leave balances, usage trends)\n4. Reports must be exportable in multiple formats (PDF, Excel, CSV)\n5. System must support scheduled report generation and distribution","Requirement_Type":"Non-Functional"},{"req_id":"REQ-010","User_Story_No":"US-012","User_Story_Description":"As an HR administrator, I want to migrate all employee leave records from the legacy system to the new platform so that historical data is preserved and accessible.","Acceptance_Criteria":"1. All leave records including vacation, sick, military, jury duty, and other leave types must be migrated with complete history\n2. Leave balances must reconcile between old and new systems with 100% accuracy\n3. Employee seniority and accrual rates must be preserved during migration\n4. System must maintain compliance with Tennessee state laws regarding leave policies\n5. Migration process must include validation steps to ensure data integrity","Requirement_Type":"Migration"},{"req_id":"REQ-011","User_Story_No":"US-013","User_Story_Description":"As an HR manager, I want to migrate military leave records with their specific federal and state compliance requirements so that we maintain legal compliance for service members.","Acceptance_Criteria":"1. Military leave records must be migrated with all service dates, orders documentation, and return-to-work information\n2. System must distinguish between federal service under USERRA and state service under T.C.A. � 8-33-101\n3. Paid leave tracking for the 20 working days per calendar year must be accurately migrated\n4. Re-employment rights and protection periods must be preserved in the data migration\n5. System must maintain documentation of military orders and return dates for compliance verification","Requirement_Type":"Migration"},{"req_id":"REQ-012","User_Story_No":"US-014","User_Story_Description":"As a county administrator, I want to migrate our county-specific leave policies to the new system so that all statutory requirements and local policies are properly implemented.","Acceptance_Criteria":"1. All county-specific holiday schedules must be migrated and configured in the new system\n2. Leave accrual rules for vacation and sick leave must be accurately transferred\n3. Special leave types (jury duty, voting, bereavement) must be configured according to county policy\n4. System must support the written policy requirements of T.C.A. � 5-23-104\n5. Configuration must allow for future policy updates while preserving historical policy settings","Requirement_Type":"Migration"},{"req_id":"REQ-013","User_Story_No":"US-015","User_Story_Description":"As an HR compliance officer, I want to migrate all FMLA and pregnancy leave records so that we maintain legal compliance and protect employee rights during system transition.","Acceptance_Criteria":"1. All FMLA eligibility tracking data must be migrated with complete history\n2. Pregnancy and parental leave records must be migrated with appropriate privacy protections\n3. System must maintain compliance with both federal PDA and Tennessee parental leave law\n4. Medical certification documentation must be securely migrated with appropriate access controls\n5. Return-to-work and accommodation records must be preserved in the migration","Requirement_Type":"Migration"},{"req_id":"REQ-014","User_Story_No":"US-016","User_Story_Description":"As a county HR administrator, I want the leave management system to automatically calculate and track the 20 working days of paid military leave per calendar year so that I can ensure compliance with T.C.A. � 8-33-109.","Acceptance_Criteria":"1. System must accurately track military leave usage up to 20 working days per calendar year\n2. System must validate military leave requests against proper documentation (competent orders)\n3. System must alert administrators when an employee approaches or exceeds the 20-day limit\n4. System must handle the transition from paid to unpaid military leave after 20 days\n5. System must maintain audit records of all military leave transactions for compliance reporting","Requirement_Type":"Integration"},{"req_id":"REQ-014","User_Story_No":"US-017","User_Story_Description":"As a county payroll manager, I want the system to integrate with our timekeeping system to automatically adjust pay calculations for employees on jury duty by deducting jury duty fees from their regular compensation as required by T.C.A. � 22-4-106.","Acceptance_Criteria":"1. System must capture jury duty service dates and hours served\n2. System must allow for entry of jury duty compensation received by employee\n3. System must correctly calculate the employee's regular compensation less jury duty fees\n4. System must generate exception reports for any jury duty leave that exceeds three hours in a day\n5. System must maintain compliance with the requirement that employees return to work when serving less than three hours","Requirement_Type":"Integration"},{"req_id":"REQ-014","User_Story_No":"US-018","User_Story_Description":"As a department manager, I want the leave management system to integrate with our scheduling system to automatically adjust staffing when employees take voting leave so that I can ensure operational coverage while complying with T.C.A. � 2-1-106.","Acceptance_Criteria":"1. System must validate voting leave requests against polling hours in the employee's county of residence\n2. System must verify that requests are submitted before noon of the day before the election\n3. System must automatically deny voting leave requests for employees whose work schedule begins three or more hours after polls open or ends three or more hours before polls close\n4. System must generate notifications to managers about approved voting leave for staffing adjustments\n5. System must maintain records of voting leave for compliance reporting","Requirement_Type":"Integration"},{"req_id":"REQ-014","User_Story_No":"US-019","User_Story_Description":"As an HR director, I want the leave management system to integrate with our document management system to store and retrieve required documentation for pregnancy and parental leave so that I can ensure compliance with both federal PDA and Tennessee's parental leave law T.C.A. � 4-21-408.","Acceptance_Criteria":"1. System must securely store and link medical documentation for pregnancy-related leave\n2. System must track the four-month parental leave allowance under Tennessee law\n3. System must distinguish between paid and unpaid portions of parental leave\n4. System must maintain separate tracking for FMLA and state parental leave entitlements\n5. System must generate alerts when documentation is missing or approaching expiration","Requirement_Type":"Integration"},{"req_id":"REQ-014","User_Story_No":"US-020","User_Story_Description":"As a county benefits administrator, I want the system to integrate with our health insurance platform to automatically manage continuation of health benefits for employees on military leave so that I can ensure compliance with USERRA's health insurance continuation requirements.","Acceptance_Criteria":"1. System must track the 24-month maximum period for health insurance continuation during military service\n2. System must calculate the correct premium amounts (up to 102% of full premium for service over 31 days)\n3. System must ensure employees on military service less than 31 days pay only their regular employee share\n4. System must generate notices to employees about their health insurance continuation rights\n5. System must maintain records of all health insurance elections and payments during military leave","Requirement_Type":"Integration"},{"req_id":"REQ-015","User_Story_No":"US-021","User_Story_Description":"As a county administrator, I want the system to automatically update the holiday calendar based on Tennessee's legal holiday schedule (T.C.A. � 15-1-101) so that all county offices have accurate holiday information without manual entry.","Acceptance_Criteria":"1. System must automatically populate all legal holidays defined in T.C.A. � 15-1-101\n2. System must correctly adjust weekend holidays to the preceding Friday or following Monday as specified by law\n3. System must accommodate special holidays declared by the governor or president\n4. System must allow configuration of which holidays are observed by each county office\n5. System must maintain an audit trail of all holiday calendar changes","Requirement_Type":"Integration"},{"req_id":"REQ-015","User_Story_No":"US-022","User_Story_Description":"As an HR manager, I want the system to identify veteran employees and automatically process their Veterans' Day leave requests according to T.C.A. � 15-1-105 so that we remain compliant with state law regarding veterans' rights.","Acceptance_Criteria":"1. System must maintain a database of employees with verified veteran status\n2. System must track the one-month advance written notice requirement for Veterans' Day leave\n3. System must validate veteran status documentation (DD Form 214 or equivalent)\n4. System must allow managers to assess operational impact of multiple veteran absences\n5. System must distinguish between paid and non-paid Veterans' Day leave options","Requirement_Type":"Integration"},{"req_id":"REQ-016","User_Story_No":"US-023","User_Story_Description":"As a county HR director, I want the system to automatically verify that all required leave policies under T.C.A. � 5-23-104 are properly documented and accessible to employees so that we maintain compliance with state law requirements.","Acceptance_Criteria":"1. System must maintain a checklist of all required leave policies under T.C.A. � 5-23-104\n2. System must track the status and last update date of each required policy\n3. System must generate alerts when policies are missing or outdated\n4. System must provide an audit trail of policy updates and publications\n5. System must verify that policies contain all required elements for each leave type","Requirement_Type":"Integration"},{"req_id":"REQ-016","User_Story_No":"US-024","User_Story_Description":"As an employee, I want to access all leave policies through the employee portal with automatic notifications when policies are updated so that I always have the most current information about my leave benefits.","Acceptance_Criteria":"1. System must provide a searchable repository of all leave policies\n2. System must track which employees have viewed or acknowledged each policy\n3. System must send notifications to employees when relevant policies are updated\n4. System must maintain version history of all policies with effective dates\n5. System must provide mobile-friendly access to all leave policy documentation","Requirement_Type":"Integration"},{"req_id":"REQ-017","User_Story_No":"US-025","User_Story_Description":"As an HR manager, I want to view consolidated leave balances for all employees so that I can monitor compliance with county leave policies.","Acceptance_Criteria":"1. Dashboard must display all types of leave mentioned in county policies (holidays, vacation, sick, bereavement, etc.)\n2. System must calculate accurate leave balances based on accrual rates and usage\n3. Dashboard must flag when employees exceed allowable leave limits\n4. System must handle special cases like military leave with 20 working days of full compensation\n5. Access to leave data must be restricted to authorized personnel only","Requirement_Type":"Dashboarding and Reporting"},{"req_id":"REQ-017","User_Story_No":"US-026","User_Story_Description":"As a department supervisor, I want to generate leave usage reports by department so that I can identify patterns and plan staffing accordingly.","Acceptance_Criteria":"1. Reports must be filterable by department, leave type, and date range\n2. System must calculate leave usage statistics including averages and trends\n3. Reports must identify employees approaching maximum leave accruals\n4. System must allow export of reports in standard formats (PDF, Excel)\n5. Reports must include compliance indicators for mandatory leave provisions","Requirement_Type":"Dashboarding and Reporting"},{"req_id":"REQ-017","User_Story_No":"US-027","User_Story_Description":"As a county administrator, I want to view compliance reports for military leave so that I can ensure we're meeting state and federal requirements for service members.","Acceptance_Criteria":"1. Dashboard must track the 20 working days of paid military leave per calendar year\n2. System must distinguish between state and federal military service obligations\n3. Reports must flag potential USERRA violations for returning service members\n4. System must track re-employment timelines based on length of military service\n5. Dashboard must include military leave cost analysis for budgeting purposes","Requirement_Type":"Dashboarding and Reporting"},{"req_id":"REQ-017","User_Story_No":"US-028","User_Story_Description":"As an HR specialist, I want to generate reports on leave taken after employee arrests so that I can ensure compliance with back pay restoration requirements.","Acceptance_Criteria":"1. System must track leave status for employees placed on leave following arrest\n2. Reports must identify case outcomes (charges dropped, not guilty, guilty plea)\n3. Dashboard must calculate potential back pay obligations for eligible employees\n4. System must flag cases requiring back pay restoration per T.C.A. � 7-51-1701\n5. Reports must maintain confidentiality of sensitive employee information","Requirement_Type":"Dashboarding and Reporting"},{"req_id":"REQ-018","User_Story_No":"US-029","User_Story_Description":"As an HR director, I want to view a compliance dashboard for all leave types so that I can ensure the county is meeting all state and federal requirements.","Acceptance_Criteria":"1. Dashboard must track compliance with all applicable leave laws (FMLA, USERRA, PDA, etc.)\n2. System must alert when mandatory documentation is missing or incomplete\n3. Reports must identify potential compliance violations for immediate action\n4. Dashboard must include audit trail of compliance-related activities\n5. System must update automatically when leave laws or regulations change","Requirement_Type":"Dashboarding and Reporting"},{"req_id":"REQ-018","User_Story_No":"US-030","User_Story_Description":"As a county attorney, I want to generate reports on potential leave policy violations so that I can address legal risks proactively.","Acceptance_Criteria":"1. Reports must identify patterns of potential discrimination in leave approval\n2. System must flag cases where mandatory leave provisions weren't followed\n3. Dashboard must track timelines for legal requirements (e.g., FMLA, military leave)\n4. Reports must include documentation status for legally required notices\n5. System must maintain confidentiality of sensitive employee information","Requirement_Type":"Dashboarding and Reporting"},{"req_id":"REQ-019","User_Story_No":"US-031","User_Story_Description":"As a finance director, I want to view the financial impact of all leave types so that I can accurately budget for leave-related expenses.","Acceptance_Criteria":"1. Dashboard must calculate the cost of paid leave by department and leave type\n2. System must track accrued leave liabilities for financial reporting\n3. Reports must project future leave expenses based on historical patterns\n4. Dashboard must identify overtime costs associated with covering employee leave\n5. System must allow for fiscal year and calendar year reporting views","Requirement_Type":"Dashboarding and Reporting"},{"req_id":"REQ-019","User_Story_No":"US-032","User_Story_Description":"As a county budget analyst, I want to generate reports comparing leave usage across departments so that I can identify trends and budget variances.","Acceptance_Criteria":"1. Reports must compare leave usage and costs across departments\n2. System must calculate per-employee leave costs for benchmarking\n3. Dashboard must identify departments with above-average leave expenses\n4. Reports must track budget variances related to unplanned leave\n5. System must provide year-over-year trend analysis for budget planning","Requirement_Type":"Dashboarding and Reporting"}]
+import { useMemo, useCallback, useState, useEffect } from 'react'
+import { createEditor, Editor, Transforms, Element as SlateElement } from 'slate'
+import { Slate, Editable, withReact, useSlate } from 'slate-react'
+import { withHistory } from 'slate-history'
 
+// --- HTML <-> Slate leaf conversion utilities ---
 
+const leafToHtml = (leaf) => {
+  let html = leaf.text
+  if (leaf.code) html = `<code>${html}</code>`
+  if (leaf.italic) html = `<em>${html}</em>`
+  if (leaf.bold) html = `<strong>${html}</strong>`
+  if (leaf.underline) html = `<u>${html}</u>`
+  return html
+}
 
+// Map Slate element types to HTML tags
+const BLOCK_TAG_MAP = {
+  'heading-one': 'h1',
+  'heading-two': 'h2',
+  'block-quote': 'blockquote',
+  'numbered-list': 'ol',
+  'bulleted-list': 'ul',
+  'list-item': 'li',
+}
 
+// Recursively convert any Slate node to HTML
+const nodeToHtml = (node) => {
+  // Text leaf node
+  if (typeof node.text === 'string') {
+    return leafToHtml(node)
+  }
+  // Element node — recurse into children
+  const inner = (node.children || []).map(child => nodeToHtml(child)).join('')
+  const tag = BLOCK_TAG_MAP[node.type]
+  if (tag) return `<${tag}>${inner}</${tag}>`
+  return inner
+}
 
+const cellToHtml = (cell) => {
+  const children = cell.children || []
+  return children.map(child => nodeToHtml(child)).join('\n')
+}
 
- {"Employee Leave Management System": {"req_id": "REQ-001", "RequirementDescription": "The system shall provide functionality to manage different types of employee leave including holidays, vacation/annual leave, sick leave, bereavement leave, voting leave, jury duty, pregnancy leave, administrative leave, military leave, and in-line-of-duty injury leave. The system must track leave balances, accruals, and usage according to county policies and applicable state and federal laws.", "UserStories": [{"userstory_id": "US-001", "Story": "As an HR administrator, I want to configure different types of leave policies so that they comply with state and federal regulations.", "AcceptanceCriteria": ["System allows configuration of all leave types mentioned in the county policies", "System enforces mandatory leave provisions as required by state law", "System distinguishes between paid and unpaid leave types", "System allows setting different accrual rates for different leave types", "System maintains an audit trail of policy changes"], "RequirementType": "Functional", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": 3, "section": "Employee Leave", "justification": "The citation is from the Employee Leave section which states that counties must have written policies for employee leave, indicating the need for a system to manage these policies.", "referred_in": "This citation supports the requirement for configuring different types of leave policies in compliance with regulations.", "source_timestamp": ""}, {"userstory_id": "US-002", "Story": "As an employee, I want to request time off for various leave types so that I can manage my work-life balance while following county policies.", "AcceptanceCriteria": ["System allows employees to submit leave requests for all available leave types", "System displays current leave balances to employees when requesting leave", "System validates leave requests against available balances", "System notifies appropriate supervisors of pending leave requests", "System prevents submission of invalid leave requests"], "RequirementType": "Functional", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": 3, "section": "Employee Leave", "justification": "The citation is from the Employee Leave section which mentions various types of leave that employees may take, indicating the need for a system to request and track these leave types.", "referred_in": "This citation supports the requirement for employees to request different types of leave according to county policies.", "source_timestamp": ""}]}, "Military Leave Compliance": {"req_id": "REQ-002", "RequirementDescription": "The system shall provide specialized functionality to handle military leave in compliance with both federal law (USERRA) and state law. This includes tracking the 20 working days of paid military leave per calendar year, managing re-employment rights, maintaining benefits during military service, and ensuring proper return-to-work procedures based on the length of military service.", "UserStories": [{"userstory_id": "US-003", "Story": "As an HR administrator, I want to track military leave separately from other leave types so that I can ensure compliance with USERRA and state military leave laws.", "AcceptanceCriteria": ["System tracks up to 20 working days of paid military leave per calendar year as required by state law", "System allows for continuation of health insurance for up to 24 months for employees on military leave", "System maintains employee seniority and benefits during military leave periods", "System supports different return-to-work timeframes based on length of military service", "System generates reports on military leave usage for compliance purposes"], "RequirementType": "Functional", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": 7, "section": "Military Leave", "justification": "The citation is from the Military Leave section which details specific requirements for military leave under both state and federal law, indicating the need for specialized tracking of this leave type.", "referred_in": "This citation supports the requirement for tracking military leave separately and ensuring compliance with specific regulations.", "source_timestamp": ""}, {"userstory_id": "US-004", "Story": "As an employee on military leave, I want my employment status and benefits properly maintained so that my rights are protected according to USERRA and state law.", "AcceptanceCriteria": ["System maintains employee status as 'on military leave' rather than terminated", "System preserves accrued benefits from before military service began", "System allows employee to use accrued vacation/annual leave during military service if requested", "System supports re-employment process based on length of service timeframes", "System prevents unauthorized termination within protected periods after return from service"], "RequirementType": "Functional", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": 8, "section": "Federal Law-USERRA", "justification": "The citation is from the Federal Law-USERRA section which details specific protections for employees on military leave, including employment status and benefits maintenance.", "referred_in": "This citation supports the requirement for maintaining proper employment status and benefits for employees on military leave.", "source_timestamp": ""}]}, "Leave Restoration After Arrest": {"req_id": "REQ-003", "RequirementDescription": "The system shall provide functionality to track and restore back pay to employees who were placed on leave following an arrest if the charges are dropped or the employee is found not guilty. This requirement does not apply if the employee pleads guilty, separates from employment voluntarily before being found guilty, or is terminated for a reason other than the arrest.", "UserStories": [{"userstory_id": "US-005", "Story": "As an HR administrator, I want to track the status of employees placed on leave after an arrest so that I can restore back pay if charges are dropped or the employee is found not guilty.", "AcceptanceCriteria": ["System allows tracking of employees placed on leave due to arrest", "System records the outcome of legal proceedings related to the arrest", "System calculates back pay owed if charges are dropped or employee is found not guilty", "System does not calculate back pay if employee pleads guilty or separates voluntarily", "System maintains documentation of arrest, leave status, and case resolution"], "RequirementType": "Functional", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": 6, "section": "Leave After an Arrest", "justification": "The citation is from the Leave After an Arrest section which specifically requires counties to implement a policy that restores back pay to employees if charges are dropped or the employee is found not guilty.", "referred_in": "This citation directly supports the requirement for tracking and restoring back pay to employees placed on leave after an arrest under specific conditions.", "source_timestamp": ""}]}, "Pregnancy and Parental Leave Management": {"req_id": "REQ-004", "RequirementDescription": "The system shall provide functionality to manage pregnancy and parental leave in compliance with the federal Pregnancy Discrimination Act, Family and Medical Leave Act, and Tennessee parental leave law. This includes ensuring that pregnancy-related conditions are treated the same as other temporary medical disabilities, allowing up to four months off for adoption, pregnancy, childbirth, and nursing for eligible employees, and maintaining proper employment status and benefits during leave.", "UserStories": [{"userstory_id": "US-006", "Story": "As an HR administrator, I want to properly categorize and track pregnancy and parental leave so that I ensure compliance with federal and state regulations.", "AcceptanceCriteria": ["System treats pregnancy-related medical leave the same as other temporary medical disabilities", "System allows up to four months of leave for adoption, pregnancy, childbirth, and nursing", "System maintains employment status, seniority, and benefits during pregnancy/parental leave", "System distinguishes between paid and unpaid portions of pregnancy/parental leave", "System prevents discrimination based on pregnancy status"], "RequirementType": "Functional", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": 5, "section": "Pregnancy Leave and other Parental Leave", "justification": "The citation is from the Pregnancy Leave and other Parental Leave section which details requirements under the federal Pregnancy Discrimination Act, FMLA, and Tennessee parental leave law.", "referred_in": "This citation supports the requirement for properly categorizing and tracking pregnancy and parental leave in compliance with regulations.", "source_timestamp": ""}]}, "System Availability and Performance": {"req_id": "REQ-005", "RequirementDescription": "The employee leave management system must maintain high availability and performance standards to ensure employees and administrators can access leave information and process requests efficiently at all times.", "UserStories": [{"userstory_id": "US-007", "Story": "As a county employee, I want the leave management system to be available 24/7 so that I can submit leave requests at any time without system downtime.", "AcceptanceCriteria": ["System must maintain 99.9% uptime during business hours (8am-5pm, Monday-Friday)", "System response time must not exceed 3 seconds for any transaction", "System must handle at least 500 concurrent users without performance degradation", "Scheduled maintenance must occur during non-business hours with advance notice to users", "System must include redundancy measures to prevent data loss during outages"], "RequirementType": "Non-Functional", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Employee Leave", "justification": "The document emphasizes the importance of having written policies for employee leave management, implying a system that must be consistently available for employees to access these policies and submit requests.", "referred_in": "This citation supports the need for a system that is consistently available to support the leave management policies mentioned in the document.", "source_timestamp": "N/A"}]}, "Data Security and Privacy": {"req_id": "REQ-006", "RequirementDescription": "The employee leave management system must implement robust security measures to protect sensitive employee information and comply with relevant data protection regulations.", "UserStories": [{"userstory_id": "US-008", "Story": "As a county HR administrator, I want the leave management system to have strong security controls so that employee personal and medical information remains confidential and protected.", "AcceptanceCriteria": ["All data must be encrypted both in transit and at rest using industry-standard encryption protocols", "System must implement role-based access controls to restrict information access based on job responsibilities", "System must maintain detailed audit logs of all access and changes to employee leave records", "System must comply with relevant data protection regulations for handling medical information", "Authentication must require multi-factor verification for administrative access"], "RequirementType": "Non-Functional", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Sick Leave, Pregnancy Leave and other Parental Leave", "justification": "The document discusses sensitive leave types like sick leave, pregnancy leave, and medical conditions that would contain protected health information requiring secure handling.", "referred_in": "This citation supports the need for security measures when handling sensitive medical information related to various leave types mentioned in these sections.", "source_timestamp": "N/A"}]}, "Compliance with Legal Requirements": {"req_id": "REQ-007", "RequirementDescription": "The employee leave management system must ensure compliance with all federal and state laws governing employee leave, including FMLA, USERRA, state parental leave laws, and other applicable regulations.", "UserStories": [{"userstory_id": "US-009", "Story": "As a county legal officer, I want the leave management system to automatically enforce compliance with all applicable leave laws so that the county avoids legal violations and potential penalties.", "AcceptanceCriteria": ["System must track and enforce FMLA eligibility and entitlements accurately", "System must properly handle military leave in accordance with USERRA and state law requirements", "System must accommodate pregnancy and parental leave requirements under both federal and state law", "System must generate required notifications and documentation for legally mandated leave types", "System must be easily updatable when leave laws change"], "RequirementType": "Non-Functional", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Military Leave, Federal Law-USERRA, State Law", "justification": "These sections detail specific legal requirements for military leave under both federal and state law that the system must comply with, including specific timeframes and protections.", "referred_in": "This citation supports the need for the system to enforce compliance with the detailed military leave requirements outlined in these sections.", "source_timestamp": "N/A"}]}, "Accessibility and Usability": {"req_id": "REQ-008", "RequirementDescription": "The employee leave management system must be accessible and usable by all county employees regardless of technical proficiency or disability status, ensuring equitable access to leave benefits.", "UserStories": [{"userstory_id": "US-010", "Story": "As a county employee with limited technical skills, I want an intuitive leave management interface so that I can easily submit and track my leave requests without specialized training.", "AcceptanceCriteria": ["System must comply with WCAG 2.1 AA accessibility standards", "Interface must be navigable using keyboard-only input for users with mobility limitations", "System must support screen readers and other assistive technologies", "System must use clear, simple language and intuitive navigation", "Help documentation must be readily available within the system"], "RequirementType": "Non-Functional", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Employee Leave", "justification": "The document states that counties must have written policies for employee leave, implying these policies must be accessible to all employees, which extends to the system implementing these policies.", "referred_in": "This citation supports the need for accessibility in the system that would implement the written leave policies mentioned in this section.", "source_timestamp": "N/A"}]}, "Audit and Reporting Capabilities": {"req_id": "REQ-009", "RequirementDescription": "The employee leave management system must provide comprehensive audit trails and reporting capabilities to track leave usage, ensure policy compliance, and support management decision-making.", "UserStories": [{"userstory_id": "US-011", "Story": "As a county department manager, I want to generate detailed leave reports for my team so that I can monitor leave patterns, plan staffing, and ensure policy compliance.", "AcceptanceCriteria": ["System must maintain complete audit trails of all leave transactions and approvals", "Reports must be customizable by date range, department, leave type, and employee", "System must generate standard reports for common management needs (e.g., leave balances, usage trends)", "Reports must be exportable in multiple formats (PDF, Excel, CSV)", "System must support scheduled report generation and distribution"], "RequirementType": "Non-Functional", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Vacation/Annual Leave, Sick Leave", "justification": "These sections mention that state law requires maintaining records of leave usage, which necessitates robust reporting and audit capabilities.", "referred_in": "This citation supports the need for record-keeping capabilities as mentioned in these sections where it states 'provisions for maintaining records' are required by state law.", "source_timestamp": "N/A"}]}, "Data Migration from Legacy System": {"req_id": "REQ-010", "RequirementDescription": "Migrate employee leave data from the current system to a new platform that aligns with the CTAS (County Technical Assistance Service) guidelines. The migration must ensure all historical leave records, accruals, and balances are accurately transferred while maintaining compliance with state and federal regulations for various leave types including military leave, jury duty, and FMLA.", "UserStories": [{"userstory_id": "US-012", "Story": "As an HR administrator, I want to migrate all employee leave records from the legacy system to the new platform so that historical data is preserved and accessible.", "AcceptanceCriteria": ["All leave records including vacation, sick, military, jury duty, and other leave types must be migrated with complete history", "Leave balances must reconcile between old and new systems with 100% accuracy", "Employee seniority and accrual rates must be preserved during migration", "System must maintain compliance with Tennessee state laws regarding leave policies", "Migration process must include validation steps to ensure data integrity"], "RequirementType": "Migration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Page 3-12", "section": "Employee Leave", "justification": "The document provides comprehensive information about various leave types that would need to be migrated, including vacation/annual leave, sick leave, military leave, and other specialized leave types that would need to be preserved in a system migration.", "referred_in": "This citation supports the requirement for migrating employee leave records while maintaining compliance with state regulations as outlined in the document.", "source_timestamp": ""}]}, "Military Leave Data Migration": {"req_id": "REQ-011", "RequirementDescription": "Migrate all military leave records and ensure the new system properly handles the complex requirements of both federal (USERRA) and state military leave laws. The migration must preserve historical military service records, paid leave entitlements (20 working days per calendar year), and re-employment rights information to maintain compliance with T.C.A. \u00a7 8-33-101 et seq. and USERRA regulations.", "UserStories": [{"userstory_id": "US-013", "Story": "As an HR manager, I want to migrate military leave records with their specific federal and state compliance requirements so that we maintain legal compliance for service members.", "AcceptanceCriteria": ["Military leave records must be migrated with all service dates, orders documentation, and return-to-work information", "System must distinguish between federal service under USERRA and state service under T.C.A. \u00a7 8-33-101", "Paid leave tracking for the 20 working days per calendar year must be accurately migrated", "Re-employment rights and protection periods must be preserved in the data migration", "System must maintain documentation of military orders and return dates for compliance verification"], "RequirementType": "Migration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Pages 7-11", "section": "Military Leave, Federal Law-USERRA, State Law", "justification": "The document contains extensive details about military leave requirements under both federal USERRA law and Tennessee state law that would need to be carefully migrated to maintain compliance with these complex regulations.", "referred_in": "This citation supports the specific military leave migration requirements, particularly the need to track the 20 working days of paid leave per calendar year and maintain documentation of service periods.", "source_timestamp": ""}]}, "Leave Policy Configuration Migration": {"req_id": "REQ-012", "RequirementDescription": "Migrate and configure all county-specific leave policies from the legacy system to the new platform, ensuring that the written policies required by T.C.A. \u00a7 5-23-104 are properly implemented in the system. This includes configuration of holiday schedules, leave accrual rules, and special leave types such as jury duty, voting leave, and bereavement leave.", "UserStories": [{"userstory_id": "US-014", "Story": "As a county administrator, I want to migrate our county-specific leave policies to the new system so that all statutory requirements and local policies are properly implemented.", "AcceptanceCriteria": ["All county-specific holiday schedules must be migrated and configured in the new system", "Leave accrual rules for vacation and sick leave must be accurately transferred", "Special leave types (jury duty, voting, bereavement) must be configured according to county policy", "System must support the written policy requirements of T.C.A. \u00a7 5-23-104", "Configuration must allow for future policy updates while preserving historical policy settings"], "RequirementType": "Migration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Pages 3-6", "section": "Holidays, Vacation/Annual Leave, Sick Leave, Bereavement/Funeral Leave, Voting Leave, Jury and Court Duty", "justification": "The document emphasizes that state law requires counties to have written policies for various leave types, and these policies would need to be migrated and configured in any new system implementation.", "referred_in": "This citation supports the requirement to migrate county-specific leave policies, particularly the reference to T.C.A. \u00a7 5-23-104 which mandates written policies for leave practices.", "source_timestamp": ""}]}, "FMLA and Pregnancy Leave Data Migration": {"req_id": "REQ-013", "RequirementDescription": "Migrate all Family and Medical Leave Act (FMLA) and pregnancy leave records to ensure compliance with federal Pregnancy Discrimination Act and Tennessee parental leave law (T.C.A. \u00a7 4-21-408). The migration must preserve historical FMLA eligibility tracking, leave usage, medical certifications, and return-to-work documentation while maintaining data privacy.", "UserStories": [{"userstory_id": "US-015", "Story": "As an HR compliance officer, I want to migrate all FMLA and pregnancy leave records so that we maintain legal compliance and protect employee rights during system transition.", "AcceptanceCriteria": ["All FMLA eligibility tracking data must be migrated with complete history", "Pregnancy and parental leave records must be migrated with appropriate privacy protections", "System must maintain compliance with both federal PDA and Tennessee parental leave law", "Medical certification documentation must be securely migrated with appropriate access controls", "Return-to-work and accommodation records must be preserved in the migration"], "RequirementType": "Migration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Pages 5-6", "section": "Pregnancy Leave and other Parental Leave", "justification": "The document details requirements for pregnancy leave under both federal and Tennessee state law (T.C.A. \u00a7 4-21-408) that would need to be carefully migrated to maintain compliance with these regulations.", "referred_in": "This citation supports the requirement to migrate FMLA and pregnancy leave data while maintaining compliance with both federal and state regulations as detailed in the document.", "source_timestamp": ""}]}, "Employee Leave Management System Integration": {"req_id": "REQ-014", "RequirementDescription": "Develop an integration system that connects the county's employee management system with the leave tracking application to automate the processing, approval, and recording of various types of employee leave (including holidays, vacation, sick leave, military leave, jury duty, etc.) in compliance with state and federal regulations. The integration must support real-time data exchange between systems, maintain accurate leave balances, and enforce compliance with Tennessee state laws regarding employee leave policies.", "UserStories": [{"userstory_id": "US-016", "Story": "As a county HR administrator, I want the leave management system to automatically calculate and track the 20 working days of paid military leave per calendar year so that I can ensure compliance with T.C.A. \u00a7 8-33-109.", "AcceptanceCriteria": ["System must accurately track military leave usage up to 20 working days per calendar year", "System must validate military leave requests against proper documentation (competent orders)", "System must alert administrators when an employee approaches or exceeds the 20-day limit", "System must handle the transition from paid to unpaid military leave after 20 days", "System must maintain audit records of all military leave transactions for compliance reporting"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "State Law section", "section": "Military Leave", "justification": "The citation provides specific details about the military leave requirements under T.C.A. \u00a7 8-33-109 which mandates 20 working days of paid military leave", "referred_in": "The user story directly references the 20 working days of paid military leave requirement mentioned in the knowledge base", "source_timestamp": ""}, {"userstory_id": "US-017", "Story": "As a county payroll manager, I want the system to integrate with our timekeeping system to automatically adjust pay calculations for employees on jury duty by deducting jury duty fees from their regular compensation as required by T.C.A. \u00a7 22-4-106.", "AcceptanceCriteria": ["System must capture jury duty service dates and hours served", "System must allow for entry of jury duty compensation received by employee", "System must correctly calculate the employee's regular compensation less jury duty fees", "System must generate exception reports for any jury duty leave that exceeds three hours in a day", "System must maintain compliance with the requirement that employees return to work when serving less than three hours"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Jury and Court Duty section", "section": "Jury and Court Duty", "justification": "The citation provides specific details about jury duty compensation requirements under T.C.A. \u00a7 22-4-106 which mandates that employees receive their usual compensation less the jury duty fees", "referred_in": "The user story directly references the requirement to deduct jury duty fees from regular compensation as specified in the knowledge base", "source_timestamp": ""}, {"userstory_id": "US-018", "Story": "As a department manager, I want the leave management system to integrate with our scheduling system to automatically adjust staffing when employees take voting leave so that I can ensure operational coverage while complying with T.C.A. \u00a7 2-1-106.", "AcceptanceCriteria": ["System must validate voting leave requests against polling hours in the employee's county of residence", "System must verify that requests are submitted before noon of the day before the election", "System must automatically deny voting leave requests for employees whose work schedule begins three or more hours after polls open or ends three or more hours before polls close", "System must generate notifications to managers about approved voting leave for staffing adjustments", "System must maintain records of voting leave for compliance reporting"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Voting Leave section", "section": "Voting Leave", "justification": "The citation provides specific details about voting leave requirements under T.C.A. \u00a7 2-1-106 including timing restrictions and eligibility criteria", "referred_in": "The user story directly references the need to comply with T.C.A. \u00a7 2-1-106 for voting leave management", "source_timestamp": ""}, {"userstory_id": "US-019", "Story": "As an HR director, I want the leave management system to integrate with our document management system to store and retrieve required documentation for pregnancy and parental leave so that I can ensure compliance with both federal PDA and Tennessee's parental leave law T.C.A. \u00a7 4-21-408.", "AcceptanceCriteria": ["System must securely store and link medical documentation for pregnancy-related leave", "System must track the four-month parental leave allowance under Tennessee law", "System must distinguish between paid and unpaid portions of parental leave", "System must maintain separate tracking for FMLA and state parental leave entitlements", "System must generate alerts when documentation is missing or approaching expiration"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Pregnancy Leave and other Parental Leave section", "section": "Pregnancy Leave and other Parental Leave", "justification": "The citation provides specific details about pregnancy and parental leave requirements under both federal PDA and Tennessee's T.C.A. \u00a7 4-21-408", "referred_in": "The user story directly references the need to comply with both federal PDA and Tennessee's parental leave law T.C.A. \u00a7 4-21-408", "source_timestamp": ""}, {"userstory_id": "US-020", "Story": "As a county benefits administrator, I want the system to integrate with our health insurance platform to automatically manage continuation of health benefits for employees on military leave so that I can ensure compliance with USERRA's health insurance continuation requirements.", "AcceptanceCriteria": ["System must track the 24-month maximum period for health insurance continuation during military service", "System must calculate the correct premium amounts (up to 102% of full premium for service over 31 days)", "System must ensure employees on military service less than 31 days pay only their regular employee share", "System must generate notices to employees about their health insurance continuation rights", "System must maintain records of all health insurance elections and payments during military leave"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Federal Law-USERRA section", "section": "Military Leave", "justification": "The citation provides specific details about health insurance continuation requirements under USERRA including the 24-month maximum period and premium calculation rules", "referred_in": "The user story directly references USERRA's health insurance continuation requirements as detailed in the knowledge base", "source_timestamp": ""}]}, "Holiday Calendar System Integration": {"req_id": "REQ-015", "RequirementDescription": "Develop an integration between the county's holiday calendar system and the employee time tracking system to automatically apply holiday leave based on Tennessee's legal holiday schedule (T.C.A. \u00a7 15-1-101). The integration must support configurable holiday schedules for different county offices, handle weekend holiday adjustments, and properly process special provisions such as Veterans' Day observance for veteran employees under T.C.A. \u00a7 15-1-105.", "UserStories": [{"userstory_id": "US-021", "Story": "As a county administrator, I want the system to automatically update the holiday calendar based on Tennessee's legal holiday schedule (T.C.A. \u00a7 15-1-101) so that all county offices have accurate holiday information without manual entry.", "AcceptanceCriteria": ["System must automatically populate all legal holidays defined in T.C.A. \u00a7 15-1-101", "System must correctly adjust weekend holidays to the preceding Friday or following Monday as specified by law", "System must accommodate special holidays declared by the governor or president", "System must allow configuration of which holidays are observed by each county office", "System must maintain an audit trail of all holiday calendar changes"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Holidays section", "section": "Holidays", "justification": "The citation provides the specific legal holidays defined in T.C.A. \u00a7 15-1-101 and rules for weekend holiday adjustments", "referred_in": "The user story directly references the need to implement Tennessee's legal holiday schedule as defined in T.C.A. \u00a7 15-1-101", "source_timestamp": ""}, {"userstory_id": "US-022", "Story": "As an HR manager, I want the system to identify veteran employees and automatically process their Veterans' Day leave requests according to T.C.A. \u00a7 15-1-105 so that we remain compliant with state law regarding veterans' rights.", "AcceptanceCriteria": ["System must maintain a database of employees with verified veteran status", "System must track the one-month advance written notice requirement for Veterans' Day leave", "System must validate veteran status documentation (DD Form 214 or equivalent)", "System must allow managers to assess operational impact of multiple veteran absences", "System must distinguish between paid and non-paid Veterans' Day leave options"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Holidays section", "section": "Holidays", "justification": "The citation provides specific details about Veterans' Day leave requirements under T.C.A. \u00a7 15-1-105 including notice requirements and documentation", "referred_in": "The user story directly references the need to process Veterans' Day leave according to T.C.A. \u00a7 15-1-105", "source_timestamp": ""}]}, "Leave Policy Documentation System Integration": {"req_id": "REQ-016", "RequirementDescription": "Create an integration between the county's policy management system and the employee portal to ensure that all written leave policies required by T.C.A. \u00a7 5-23-104 are properly documented, maintained, and accessible to employees. The integration must support version control of policies, track policy acknowledgments, and ensure that all required leave types (vacation, sick, bereavement, etc.) have documented policies that comply with state law requirements.", "UserStories": [{"userstory_id": "US-023", "Story": "As a county HR director, I want the system to automatically verify that all required leave policies under T.C.A. \u00a7 5-23-104 are properly documented and accessible to employees so that we maintain compliance with state law requirements.", "AcceptanceCriteria": ["System must maintain a checklist of all required leave policies under T.C.A. \u00a7 5-23-104", "System must track the status and last update date of each required policy", "System must generate alerts when policies are missing or outdated", "System must provide an audit trail of policy updates and publications", "System must verify that policies contain all required elements for each leave type"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Employee Leave section", "section": "Employee Leave", "justification": "The citation references T.C.A. \u00a7 5-23-101 et seq. which requires counties to have written policies for employee leave", "referred_in": "The user story directly references the need to comply with T.C.A. \u00a7 5-23-104 regarding documentation of leave policies", "source_timestamp": ""}, {"userstory_id": "US-024", "Story": "As an employee, I want to access all leave policies through the employee portal with automatic notifications when policies are updated so that I always have the most current information about my leave benefits.", "AcceptanceCriteria": ["System must provide a searchable repository of all leave policies", "System must track which employees have viewed or acknowledged each policy", "System must send notifications to employees when relevant policies are updated", "System must maintain version history of all policies with effective dates", "System must provide mobile-friendly access to all leave policy documentation"], "RequirementType": "Integration", "source": "KnowledgeBase", "referred_document": "CTAS - Employee Leave", "referred_doc_location": "Multiple sections", "section": "Employee Leave", "justification": "The knowledge base emphasizes throughout the document the importance of written policies for various types of leave and the need for employees to be informed of these policies", "referred_in": "The user story addresses the need for employees to access leave policies which is implied throughout the knowledge base as a necessary component of policy compliance", "source_timestamp": ""}]}, "Employee Leave Tracking Dashboard": {"req_id": "REQ-017", "RequirementDescription": "A comprehensive dashboard to track and manage various types of employee leave including holidays, vacation/annual leave, sick leave, bereavement leave, voting leave, jury duty, pregnancy leave, administrative leave, military leave, and in-line-of-duty injury leave. The system should provide real-time visibility into leave balances, usage patterns, and compliance with state and federal regulations.", "UserStories": [{"userstory_id": "US-025", "Story": "As an HR manager, I want to view consolidated leave balances for all employees so that I can monitor compliance with county leave policies.", "AcceptanceCriteria": ["Dashboard must display all types of leave mentioned in county policies (holidays, vacation, sick, bereavement, etc.)", "System must calculate accurate leave balances based on accrual rates and usage", "Dashboard must flag when employees exceed allowable leave limits", "System must handle special cases like military leave with 20 working days of full compensation", "Access to leave data must be restricted to authorized personnel only"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Employee Leave, Holidays, Vacation/Annual Leave, Sick Leave, Military Leave", "justification": "The transcript extensively details various leave types that county employers must track and manage according to state law T.C.A. \u00a7 5-23-104, which requires written policies for leave management.", "referred_in": "This citation supports the need for tracking multiple leave types as specified in the user story and acceptance criteria", "source_timestamp": ""}, {"userstory_id": "US-026", "Story": "As a department supervisor, I want to generate leave usage reports by department so that I can identify patterns and plan staffing accordingly.", "AcceptanceCriteria": ["Reports must be filterable by department, leave type, and date range", "System must calculate leave usage statistics including averages and trends", "Reports must identify employees approaching maximum leave accruals", "System must allow export of reports in standard formats (PDF, Excel)", "Reports must include compliance indicators for mandatory leave provisions"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Employee Leave", "justification": "The transcript states that 'state law requires that counties have written policies in place setting out their practices with regard to employee leave' and mentions the need for 'provisions for maintaining records' for various leave types.", "referred_in": "This citation supports the need for departmental reporting capabilities to maintain proper leave records as required by state law", "source_timestamp": ""}, {"userstory_id": "US-027", "Story": "As a county administrator, I want to view compliance reports for military leave so that I can ensure we're meeting state and federal requirements for service members.", "AcceptanceCriteria": ["Dashboard must track the 20 working days of paid military leave per calendar year", "System must distinguish between state and federal military service obligations", "Reports must flag potential USERRA violations for returning service members", "System must track re-employment timelines based on length of military service", "Dashboard must include military leave cost analysis for budgeting purposes"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Military Leave, Federal Law-USERRA, State Law", "justification": "The transcript provides extensive details about military leave requirements under both federal (USERRA) and state law, including specific timelines for re-employment and the provision of 20 working days of paid leave per calendar year.", "referred_in": "This citation supports the specific military leave tracking requirements detailed in the user story and acceptance criteria", "source_timestamp": ""}, {"userstory_id": "US-028", "Story": "As an HR specialist, I want to generate reports on leave taken after employee arrests so that I can ensure compliance with back pay restoration requirements.", "AcceptanceCriteria": ["System must track leave status for employees placed on leave following arrest", "Reports must identify case outcomes (charges dropped, not guilty, guilty plea)", "Dashboard must calculate potential back pay obligations for eligible employees", "System must flag cases requiring back pay restoration per T.C.A. \u00a7 7-51-1701", "Reports must maintain confidentiality of sensitive employee information"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Leave After an Arrest, Leave for Arrested Employees", "justification": "The transcript specifically mentions T.C.A. \u00a7 7-51-1701, which requires counties to implement a policy that restores back pay to employees if charges are dropped or the employee is found not guilty.", "referred_in": "This citation directly supports the need for tracking and reporting on leave taken after employee arrests as specified in the user story", "source_timestamp": ""}]}, "Leave Policy Compliance Dashboard": {"req_id": "REQ-018", "RequirementDescription": "A specialized dashboard to monitor and ensure compliance with all federal and state leave laws and regulations, including the Pregnancy Discrimination Act, Family and Medical Leave Act, USERRA, and Tennessee-specific statutes. The system should provide alerts for potential compliance issues, track mandatory documentation, and generate compliance reports for auditing purposes.", "UserStories": [{"userstory_id": "US-029", "Story": "As an HR director, I want to view a compliance dashboard for all leave types so that I can ensure the county is meeting all state and federal requirements.", "AcceptanceCriteria": ["Dashboard must track compliance with all applicable leave laws (FMLA, USERRA, PDA, etc.)", "System must alert when mandatory documentation is missing or incomplete", "Reports must identify potential compliance violations for immediate action", "Dashboard must include audit trail of compliance-related activities", "System must update automatically when leave laws or regulations change"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Pregnancy Leave and other Parental Leave, Military Leave, Federal Law-USERRA, State Law", "justification": "The transcript details numerous federal and state laws governing employee leave, including the Pregnancy Discrimination Act, FMLA, USERRA, and Tennessee-specific statutes that require careful compliance tracking.", "referred_in": "This citation supports the need for comprehensive compliance monitoring across multiple leave types as specified in the user story", "source_timestamp": ""}, {"userstory_id": "US-030", "Story": "As a county attorney, I want to generate reports on potential leave policy violations so that I can address legal risks proactively.", "AcceptanceCriteria": ["Reports must identify patterns of potential discrimination in leave approval", "System must flag cases where mandatory leave provisions weren't followed", "Dashboard must track timelines for legal requirements (e.g., FMLA, military leave)", "Reports must include documentation status for legally required notices", "System must maintain confidentiality of sensitive employee information"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Multiple sections including Pregnancy Leave, Military Leave, Federal Law-USERRA", "justification": "The transcript outlines numerous legal requirements for different leave types, including potential discrimination issues (e.g., pregnancy leave must be treated the same as other medical leave) and specific timelines for military leave return.", "referred_in": "This citation supports the need for legal risk monitoring and compliance reporting as specified in the user story", "source_timestamp": ""}]}, "Leave Budget and Financial Impact Dashboard": {"req_id": "REQ-019", "RequirementDescription": "A financial dashboard to track and analyze the budgetary impact of employee leave, including paid leave costs, overtime expenses for covering absent employees, accrued leave liabilities, and projected leave expenses. The system should provide insights for budget planning and identify opportunities for cost management while maintaining compliance with leave policies.", "UserStories": [{"userstory_id": "US-031", "Story": "As a finance director, I want to view the financial impact of all leave types so that I can accurately budget for leave-related expenses.", "AcceptanceCriteria": ["Dashboard must calculate the cost of paid leave by department and leave type", "System must track accrued leave liabilities for financial reporting", "Reports must project future leave expenses based on historical patterns", "Dashboard must identify overtime costs associated with covering employee leave", "System must allow for fiscal year and calendar year reporting views"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Multiple sections including Holidays, Vacation/Annual Leave, Sick Leave, Military Leave", "justification": "The transcript details various types of paid leave that have financial implications, including holidays, vacation/annual leave, sick leave, and military leave (which provides 20 days of paid leave).", "referred_in": "This citation supports the need for financial tracking of leave costs as specified in the user story", "source_timestamp": ""}, {"userstory_id": "US-032", "Story": "As a county budget analyst, I want to generate reports comparing leave usage across departments so that I can identify trends and budget variances.", "AcceptanceCriteria": ["Reports must compare leave usage and costs across departments", "System must calculate per-employee leave costs for benchmarking", "Dashboard must identify departments with above-average leave expenses", "Reports must track budget variances related to unplanned leave", "System must provide year-over-year trend analysis for budget planning"], "RequirementType": "Dashboarding and Reporting", "source": "Call Transcript", "referred_document": "node_177_printable_pdf1.pdf", "referred_doc_location": "https://sb-dev22-tenant-f4687f55-tenantbucket-p7dlz99a1q3t.s3.us-east-1.amazonaws.com/node_177_printable_pdf1.pdf", "section": "Employee Leave, Holidays, Vacation/Annual Leave, Sick Leave", "justification": "The transcript mentions various types of leave that have financial implications and notes that 'state law requires that counties have written policies in place setting out their practices with regard to employee leave,' which would necessitate tracking for budgetary purposes.", "referred_in": "This citation supports the need for comparative analysis of leave usage across departments as specified in the user story", "source_timestamp": ""}]}}
+const cellToHtmlArray = (cell) => {
+  const children = cell.children || []
+  return children
+    .map(child => nodeToHtml(child))
+    .filter(t => t.trim().length > 0)
+}
 
+const htmlToLeaves = (html) => {
+  if (!html || html.trim() === '') return [{ text: '' }]
 
+  const leaves = []
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
 
+  const walk = (node, marks) => {
+    if (node.nodeType === 3) {
+      const text = node.textContent
+      if (text) leaves.push({ text, ...marks })
+      return
+    }
+    if (node.nodeType === 1) {
+      const newMarks = { ...marks }
+      const tag = node.tagName.toLowerCase()
+      if (tag === 'strong' || tag === 'b') newMarks.bold = true
+      if (tag === 'em' || tag === 'i') newMarks.italic = true
+      if (tag === 'u') newMarks.underline = true
+      if (tag === 'code') newMarks.code = true
+      for (const child of node.childNodes) {
+        walk(child, newMarks)
+      }
+    }
+  }
 
+  for (const child of doc.body.childNodes) {
+    walk(child, {})
+  }
 
+  return leaves.length > 0 ? leaves : [{ text: '' }]
+}
+
+// Map HTML tags to Slate element types
+const HTML_TAG_TO_SLATE = {
+  h1: 'heading-one',
+  h2: 'heading-two',
+  blockquote: 'block-quote',
+  ol: 'numbered-list',
+  ul: 'bulleted-list',
+  li: 'list-item',
+}
+
+// Parse an HTML string into Slate block nodes (paragraphs, headings, lists, etc.)
+const htmlToSlateNodes = (html) => {
+  if (!html || html.trim() === '') return [{ type: 'paragraph', children: [{ text: '' }] }]
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(html, 'text/html')
+
+  const parseNode = (domNode) => {
+    // Text node
+    if (domNode.nodeType === 3) {
+      const text = domNode.textContent
+      if (!text || text.trim() === '') return null
+      return { type: 'paragraph', children: [{ text }] }
+    }
+
+    if (domNode.nodeType !== 1) return null
+
+    const tag = domNode.tagName.toLowerCase()
+    const slateType = HTML_TAG_TO_SLATE[tag]
+
+    if (slateType) {
+      // Block element — recurse for children
+      if (tag === 'ol' || tag === 'ul') {
+        // List: children should be list-items
+        const items = Array.from(domNode.childNodes)
+          .map(child => parseNode(child))
+          .filter(Boolean)
+        return { type: slateType, children: items.length > 0 ? items : [{ type: 'list-item', children: [{ text: '' }] }] }
+      }
+      // h1, h2, blockquote, li — inline content inside
+      const leaves = []
+      const walkInline = (node, marks) => {
+        if (node.nodeType === 3) {
+          const text = node.textContent
+          if (text) leaves.push({ text, ...marks })
+          return
+        }
+        if (node.nodeType === 1) {
+          const newMarks = { ...marks }
+          const t = node.tagName.toLowerCase()
+          if (t === 'strong' || t === 'b') newMarks.bold = true
+          if (t === 'em' || t === 'i') newMarks.italic = true
+          if (t === 'u') newMarks.underline = true
+          if (t === 'code') newMarks.code = true
+          for (const child of node.childNodes) {
+            walkInline(child, newMarks)
+          }
+        }
+      }
+      for (const child of domNode.childNodes) {
+        walkInline(child, {})
+      }
+      return { type: slateType, children: leaves.length > 0 ? leaves : [{ text: '' }] }
+    }
+
+    // Inline tags (strong, em, etc.) or p — treat as paragraph with inline marks
+    return { type: 'paragraph', children: htmlToLeaves(domNode.innerHTML || domNode.textContent || '') }
+  }
+
+  const nodes = Array.from(doc.body.childNodes)
+    .map(child => parseNode(child))
+    .filter(Boolean)
+
+  return nodes.length > 0 ? nodes : [{ type: 'paragraph', children: [{ text: '' }] }]
+}
+
+const htmlToParagraph = (html) => {
+  const nodes = htmlToSlateNodes(html)
+  return nodes[0] || { type: 'paragraph', children: [{ text: '' }] }
+}
+
+const htmlToCellChildren = (html) => {
+  if (!html) return [{ type: 'paragraph', children: [{ text: '' }] }]
+  return htmlToSlateNodes(html)
+}
+
+const htmlArrayToCellChildren = (arr) => {
+  if (!arr || arr.length === 0) return [{ type: 'paragraph', children: [{ text: '' }] }]
+  return arr.flatMap(item => htmlToSlateNodes(item))
+}
+
+// --- Column configuration ---
+
+const VISIBLE_COLUMNS = [
+  { key: 'req_id', label: 'Req_No' },
+  { key: 'userstory_id', label: 'User Story No' },
+  { key: 'Story', label: 'user_story_description' },
+  { key: 'AcceptanceCriteria', label: 'AcceptanceCriteria' },
+  { key: 'RequirementType', label: 'RequirementType' },
+]
+
+const HIDDEN_STORY_KEYS = [
+  'source',
+  'referred_document',
+  'referred_doc_location',
+  'section',
+  'justification',
+  'referred_in',
+  'source_timestamp',
+]
+
+// --- JSON <-> Slate conversion ---
+
+const jsonToSlateValue = (data) => {
+  const allRows = []
+
+  for (const [reqName, reqData] of Object.entries(data)) {
+    for (const story of (reqData.UserStories || [])) {
+      const hiddenData = {
+        Requirement: reqName,
+        RequirementDescription: reqData.RequirementDescription,
+      }
+      for (const key of HIDDEN_STORY_KEYS) {
+        hiddenData[key] = story[key] != null ? String(story[key]) : ''
+      }
+
+      allRows.push({
+        type: 'table-row',
+        hiddenData,
+        children: VISIBLE_COLUMNS.map(({ key }) => {
+          let val
+          if (key === 'req_id') val = reqData.req_id
+          else val = story[key]
+
+          if (Array.isArray(val)) {
+            return {
+              type: 'table-cell',
+              children: htmlArrayToCellChildren(val),
+            }
+          }
+          return {
+            type: 'table-cell',
+            children: htmlToCellChildren(val != null ? String(val) : ''),
+          }
+        }),
+      })
+    }
+  }
+
+  const headerRow = {
+    type: 'table-row',
+    children: VISIBLE_COLUMNS.map(({ label }) => ({
+      type: 'table-cell',
+      isHeader: true,
+      children: [{ type: 'paragraph', children: [{ text: label }] }],
+    })),
+  }
+
+  return [
+    {
+      type: 'table',
+      children: [headerRow, ...allRows],
+    },
+  ]
+}
+
+const slateValueToJson = (nodes) => {
+  const tableNode = nodes.find(n => n.type === 'table')
+  if (!tableNode) return {}
+
+  const rows = tableNode.children
+  const dataRows = rows.slice(1)
+
+  const result = {}
+
+  for (const row of dataRows) {
+    const cells = row.children
+    const hidden = row.hiddenData || {}
+
+    const reqId = cellToHtml(cells[0])
+    const reqName = hidden.Requirement || ''
+    const reqDesc = hidden.RequirementDescription || ''
+
+    if (!result[reqName]) {
+      result[reqName] = {
+        req_id: reqId,
+        RequirementDescription: reqDesc,
+        UserStories: [],
+      }
+    }
+
+    const story = {
+      userstory_id: cellToHtml(cells[1]),
+      Story: cellToHtml(cells[2]),
+      AcceptanceCriteria: cellToHtmlArray(cells[3]),
+      RequirementType: cellToHtml(cells[4]),
+    }
+
+    for (const key of HIDDEN_STORY_KEYS) {
+      story[key] = hidden[key] || ''
+    }
+
+    result[reqName].UserStories.push(story)
+  }
+
+  return result
+}
+
+// --- Slate plugins ---
+
+const withTables = (editor) => {
+  const { deleteBackward, deleteForward, insertBreak } = editor
+
+  editor.deleteBackward = (unit) => {
+    const { selection } = editor
+    if (selection) {
+      const [cell] = Editor.nodes(editor, {
+        match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === 'table-cell',
+      })
+      if (cell) {
+        const [, cellPath] = cell
+        if (Editor.isStart(editor, selection.anchor, cellPath)) return
+      }
+    }
+    deleteBackward(unit)
+  }
+
+  editor.deleteForward = (unit) => {
+    const { selection } = editor
+    if (selection) {
+      const [cell] = Editor.nodes(editor, {
+        match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === 'table-cell',
+      })
+      if (cell) {
+        const [, cellPath] = cell
+        if (Editor.isEnd(editor, selection.anchor, cellPath)) return
+      }
+    }
+    deleteForward(unit)
+  }
+
+  editor.insertBreak = () => {
+    const [cell] = Editor.nodes(editor, {
+      match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === 'table-cell',
+    })
+    if (cell) {
+      Transforms.insertNodes(editor, {
+        type: 'paragraph',
+        children: [{ text: '' }],
+      })
+      return
+    }
+    insertBreak()
+  }
+
+  return editor
+}
+
+// --- Toolbar helpers ---
+
+const isMarkActive = (editor, format) => {
+  const marks = Editor.marks(editor)
+  return marks ? marks[format] === true : false
+}
+
+const toggleMark = (editor, format) => {
+  if (isMarkActive(editor, format)) {
+    Editor.removeMark(editor, format)
+  } else {
+    Editor.addMark(editor, format, true)
+  }
+}
+
+const isBlockActive = (editor, format) => {
+  const [match] = Editor.nodes(editor, {
+    match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === format,
+  })
+  return !!match
+}
+
+const toggleBlock = (editor, format) => {
+  const LIST_TYPES = ['numbered-list', 'bulleted-list']
+  const isActive = isBlockActive(editor, format)
+  const isList = LIST_TYPES.includes(format)
+
+  Transforms.unwrapNodes(editor, {
+    match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && LIST_TYPES.includes(n.type),
+    split: true,
+  })
+
+  Transforms.setNodes(editor, {
+    type: isActive ? 'paragraph' : isList ? 'list-item' : format,
+  })
+
+  if (!isActive && isList) {
+    Transforms.wrapNodes(editor, { type: format, children: [] })
+  }
+}
+
+// --- Toolbar components ---
+
+const MarkButton = ({ format, label }) => {
+  const editor = useSlate()
+  const active = isMarkActive(editor, format)
+  return (
+    <button
+      style={{
+        padding: '4px 8px',
+        marginRight: '4px',
+        fontWeight: active ? 'bold' : 'normal',
+        background: active ? '#ddd' : '#f5f5f5',
+        border: '1px solid #ccc',
+        borderRadius: '3px',
+        cursor: 'pointer',
+      }}
+      onMouseDown={e => {
+        e.preventDefault()
+        toggleMark(editor, format)
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+const BlockButton = ({ format, label }) => {
+  const editor = useSlate()
+  const active = isBlockActive(editor, format)
+  return (
+    <button
+      style={{
+        padding: '4px 8px',
+        marginRight: '4px',
+        fontWeight: active ? 'bold' : 'normal',
+        background: active ? '#ddd' : '#f5f5f5',
+        border: '1px solid #ccc',
+        borderRadius: '3px',
+        cursor: 'pointer',
+      }}
+      onMouseDown={e => {
+        e.preventDefault()
+        toggleBlock(editor, format)
+      }}
+    >
+      {label}
+    </button>
+  )
+}
+
+const SaveButton = ({ editor, onSave }) => (
+  <button
+    style={{
+      padding: '6px 16px',
+      marginLeft: 'auto',
+      background: '#4CAF50',
+      color: 'white',
+      border: 'none',
+      borderRadius: '4px',
+      cursor: 'pointer',
+      fontWeight: 'bold',
+    }}
+    onMouseDown={e => {
+      e.preventDefault()
+      const json = slateValueToJson(editor.children)
+      console.log('Exported JSON:', JSON.stringify(json, null, 2))
+      // onSave(json)
+    }}
+  >
+    Save as JSON
+  </button>
+)
+
+const Toolbar = ({ onSave }) => {
+  const editor = useSlate()
+  return (
+    <div style={{ borderBottom: '1px solid #ccc', paddingBottom: '8px', marginBottom: '12px', display: 'flex', alignItems: 'center' }}>
+      <div>
+        <MarkButton format="bold" label="B" />
+        <MarkButton format="italic" label="I" />
+        <MarkButton format="underline" label="U" />
+        <MarkButton format="code" label="<>" />
+        <span style={{ margin: '0 4px', color: '#ccc' }}>|</span>
+        <BlockButton format="heading-one" label="H1" />
+        <BlockButton format="heading-two" label="H2" />
+        <BlockButton format="block-quote" label="&#x201C;&#x201D;" />
+        <BlockButton format="numbered-list" label="1." />
+        <BlockButton format="bulleted-list" label="&#x2022;" />
+      </div>
+      <SaveButton editor={editor} onSave={onSave} />
+    </div>
+  )
+}
+
+// --- Styles ---
+
+const tableStyle = {
+  width: '100%',
+  borderCollapse: 'collapse',
+  marginBottom: '24px',
+  fontSize: '13px',
+}
+
+const cellStyle = {
+  border: '1px solid #ccc',
+  padding: '6px 8px',
+  verticalAlign: 'top',
+  minWidth: '80px',
+}
+
+const headerCellStyle = {
+  ...cellStyle,
+  background: '#f0f0f0',
+  fontWeight: 'bold',
+  whiteSpace: 'nowrap',
+}
+
+// --- Main editor component ---
+
+// TODO: Replace with your actual API endpoint
+const API_ENDPOINT = '/api/save'
+
+const submitJson = async (json) => {
+  try {
+    const response = await fetch(API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(json),
+    })
+    const result = await response.json()
+    console.log('API response:', result)
+    return result
+  } catch (error) {
+    console.error('API error:', error)
+    throw error
+  }
+}
+
+const SlateEditor = ({ data }) => {
+  const editor = useMemo(() => withTables(withHistory(withReact(createEditor()))), [])
+  const initialValue = useMemo(() => jsonToSlateValue(data), [data])
+  const [exportedJson, setExportedJson] = useState(null)
+
+  useEffect(() => {
+    if (!exportedJson) return
+
+    submitJson(exportedJson)
+      .then(() => console.log('Saved successfully'))
+      .catch((err) => console.error('Save failed:', err))
+  }, [exportedJson])
+
+  const handleSave = useCallback((json) => {
+    setExportedJson(json)
+  }, [])
+
+  const renderElement = useCallback(({ attributes, children, element }) => {
+    switch (element.type) {
+      case 'heading-one':
+        return <h1 style={{ marginTop: '24px' }} {...attributes}>{children}</h1>
+      case 'heading-two':
+        return <h2 style={{ marginTop: '16px' }} {...attributes}>{children}</h2>
+      case 'block-quote':
+        return <blockquote style={{ borderLeft: '3px solid #ccc', paddingLeft: '12px', color: '#666' }} {...attributes}>{children}</blockquote>
+      case 'numbered-list':
+        return <ol {...attributes}>{children}</ol>
+      case 'bulleted-list':
+        return <ul {...attributes}>{children}</ul>
+      case 'list-item':
+        return <li {...attributes}>{children}</li>
+      case 'table':
+        return (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={tableStyle} {...attributes}>
+              <tbody>{children}</tbody>
+            </table>
+          </div>
+        )
+      case 'table-row':
+        return <tr {...attributes}>{children}</tr>
+      case 'table-cell':
+        if (element.isHeader) {
+          return <th style={headerCellStyle} {...attributes}>{children}</th>
+        }
+        return <td style={cellStyle} {...attributes}>{children}</td>
+      case 'paragraph':
+        return <p style={{ margin: '2px 0' }} {...attributes}>{children}</p>
+      default:
+        return <p {...attributes}>{children}</p>
+    }
+  }, [])
+
+  const renderLeaf = useCallback(({ attributes, children, leaf }) => {
+    if (leaf.bold) children = <strong>{children}</strong>
+    if (leaf.italic) children = <em>{children}</em>
+    if (leaf.underline) children = <u>{children}</u>
+    if (leaf.code) children = <code style={{ background: '#f0f0f0', padding: '2px 4px', borderRadius: '3px' }}>{children}</code>
+    return <span {...attributes}>{children}</span>
+  }, [])
+
+  const handleKeyDown = useCallback((event) => {
+    if (!event.ctrlKey && !event.metaKey) return
+    switch (event.key) {
+      case 'b':
+        event.preventDefault()
+        toggleMark(editor, 'bold')
+        break
+      case 'i':
+        event.preventDefault()
+        toggleMark(editor, 'italic')
+        break
+      case 'u':
+        event.preventDefault()
+        toggleMark(editor, 'underline')
+        break
+    }
+  }, [editor])
+
+  return (
+    <div style={{ border: '1px solid #ccc', padding: '16px', borderRadius: '4px' }}>
+      <Slate editor={editor} initialValue={initialValue}>
+        <Toolbar onSave={handleSave} />
+        <Editable
+          renderElement={renderElement}
+          renderLeaf={renderLeaf}
+          onKeyDown={handleKeyDown}
+          style={{ outline: 'none' }}
+        />
+      </Slate>
+    </div>
+  )
+}
+
+export default SlateEditor
