@@ -614,3 +614,16 @@ const SlateEditor = ({ data }) => {
 }
 
 export default SlateEditor
+
+
+  const responseData = useMemo(() => {
+    const raw = firstJsonString.data.UserStory_Agent.response
+    return typeof raw === 'string' ? JSON.parse(raw) : raw
+  }, [])
+ 
+  return (
+    <div>
+      <h1>Slate Editor</h1>
+      <SlateEditor data={responseData} />
+    </div>
+  )
