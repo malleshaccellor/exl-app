@@ -227,7 +227,7 @@ export const slateToActionLogJson = (nodes: Descendant[]): any => {
 };
 
 // ============================================================
-// SUMMARY (markdown text → Slate, save as HTML)
+// SUMMARY (markdown text → Slate)
 // ============================================================
 
 export const summaryToSlateValue = (text: string): Descendant[] => {
@@ -282,6 +282,7 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
+    // Numbered heading: "1. **Heading Text**"
     const numberedHeadingMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*\s*$/);
     if (numberedHeadingMatch) {
       flushList();
@@ -292,11 +293,14 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
+    // Sub-heading: short title-case phrase ending with colon (max 6 words)
+    // Avoids matching full sentences like "Here's a structured summary...:"
     const subHeadingMatch = trimmed.match(/^([A-Z][^-*].+):$/);
     if (
       subHeadingMatch &&
       !trimmed.startsWith("-") &&
-      !trimmed.startsWith("*")
+      !trimmed.startsWith("*") &&
+      subHeadingMatch[1].split(/\s+/).length <= 6
     ) {
       flushList();
       nodes.push({
@@ -306,16 +310,21 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    // Bullet item — use raw line to detect indentation level
+    const bulletMatch = line.match(/^(\s*)([-*])\s+(.+)$/);
     if (bulletMatch) {
+      const leadingSpaces = bulletMatch[1].length;
+      const indent = leadingSpaces >= 4 ? 1 : 0;
+
       if (currentListType !== "bulleted-list") {
         flushList();
         currentListType = "bulleted-list";
       }
       currentListItems.push({
         type: "list-item",
-        children: parseInlineMarks(bulletMatch[1]),
-      });
+        indent,
+        children: parseInlineMarks(bulletMatch[3]),
+      } as any);
       continue;
     }
 
@@ -368,16 +377,19 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
       }
       case "paragraph": {
         const children = node.children || [];
-        const text = childrenToMarkdown(children);
         // Detect standalone bold subheadings (were originally "Text:")
+        // Use raw text without ** marks — bold was only for editor display
         if (
           children.length === 1 &&
           children[0].bold &&
           !children[0].italic &&
-          !children[0].code
+          !children[0].code &&
+          children[0].text &&
+          children[0].text.split(/\s+/).length <= 6
         ) {
-          lines.push(`${text}:`);
+          lines.push(`${children[0].text}:`);
         } else {
+          const text = childrenToMarkdown(children);
           lines.push(text);
         }
         break;
@@ -385,7 +397,12 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
       case "bulleted-list": {
         for (const item of node.children || []) {
           const text = childrenToMarkdown(item.children);
-          lines.push(`- ${text}`);
+          const indent = (item as any).indent || 0;
+          if (indent >= 1) {
+            lines.push(`     * ${text}`);
+          } else {
+            lines.push(`   - ${text}`);
+          }
         }
         break;
       }
