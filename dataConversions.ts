@@ -1,5 +1,5 @@
 import type { Descendant } from "slate";
-import { cellToHtml, htmlToCellChildren } from "./htmlConversion";
+import { cellToHtml, htmlToCellChildren, htmlToSlateNodes } from "./htmlConversion";
 import { transformBRDDataToSlate } from "./index";
 
 // --- Helper: parse agent response (string → object) ---
@@ -235,7 +235,26 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
 
-  const lines = text.split("\n");
+  // Handle previously saved HTML data (from old save code)
+  let cleanText = text.trim();
+  // Strip wrapping quotes if present (double-encoded responses)
+  if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
+    try {
+      cleanText = JSON.parse(cleanText);
+    } catch {
+      // not valid JSON, use as-is
+    }
+  }
+  // Replace literal \n (escaped newlines) with actual newlines
+  if (cleanText.includes("\\n")) {
+    cleanText = cleanText.replace(/\\n/g, "\n");
+  }
+  // If the content is HTML, parse it using the HTML parser
+  if (/^<[a-z][\s\S]*>/i.test(cleanText.trim())) {
+    return htmlToSlateNodes(cleanText);
+  }
+
+  const lines = cleanText.split("\n");
   const nodes: Descendant[] = [];
   let currentListItems: Descendant[] = [];
   let currentListType: "bulleted-list" | null = null;
@@ -480,7 +499,27 @@ const extractBulletedListItems = (listNode: any): string[] => {
 };
 
 export const brdToSlateValue = (rawResponse: string): Descendant[] => {
-  const parsed = parseAgentResponse(rawResponse);
+  // Handle previously saved HTML data (from old save code)
+  let cleanRaw = typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
+  if (typeof cleanRaw === "string") {
+    // Strip wrapping quotes if present
+    if (cleanRaw.startsWith('"') && cleanRaw.endsWith('"')) {
+      try {
+        cleanRaw = JSON.parse(cleanRaw);
+      } catch {
+        // not valid JSON string, use as-is
+      }
+    }
+    // Replace literal \n with actual newlines
+    if (typeof cleanRaw === "string" && cleanRaw.includes("\\n")) {
+      cleanRaw = cleanRaw.replace(/\\n/g, "\n");
+    }
+    // If the content is HTML, parse it using the HTML parser
+    if (typeof cleanRaw === "string" && /^<[a-z][\s\S]*>/i.test(cleanRaw.trim())) {
+      return htmlToSlateNodes(cleanRaw);
+    }
+  }
+  const parsed = parseAgentResponse(cleanRaw);
   return transformBRDDataToSlate(parsed);
 };
 
