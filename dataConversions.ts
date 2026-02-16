@@ -1,0 +1,602 @@
+import type { Descendant } from "slate";
+import { cellToHtml, htmlToCellChildren } from "./htmlConversion";
+import { transformBRDDataToSlate } from "./index";
+
+// --- Helper: parse agent response (string → object) ---
+
+export const parseAgentResponse = (raw: unknown): any => {
+  if (typeof raw !== "string") return raw;
+  let str = raw.trim();
+  if (str.startsWith("```")) {
+    str = str.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
+  }
+  return JSON.parse(str);
+};
+
+// ============================================================
+// TEST CASES
+// ============================================================
+
+const TC_VISIBLE_COLUMNS = [
+  { key: "req_id", label: "Req ID" },
+  { key: "userstory_id", label: "User Story ID" },
+  { key: "TestCaseId", label: "Test Case ID" },
+  { key: "TestCaseTitle", label: "Test Case Title" },
+  { key: "Description", label: "Description" },
+  { key: "Preconditions", label: "Preconditions" },
+  { key: "TestData", label: "Test Data" },
+  { key: "TestSteps", label: "Test Steps" },
+  { key: "ExpectedResults", label: "Expected Results" },
+];
+
+export const testCasesToSlateValue = (data: any): Descendant[] => {
+  const allRows: any[] = [];
+
+  for (const req of data.Requirements || []) {
+    for (const story of req.UserStories || []) {
+      for (const act of story.AcceptanceCriteriaTests || []) {
+        for (const tc of act.TestCases || []) {
+          const hiddenData: Record<string, string> = {
+            AcceptanceCriterion: act.AcceptanceCriterion || "",
+            ActualResults: tc.ActualResults || "",
+            PassFail: tc.PassFail || "",
+          };
+
+          const rowData: Record<string, any> = {
+            req_id: req.req_id,
+            userstory_id: story.userstory_id,
+            TestCaseId: tc.TestCaseId,
+            TestCaseTitle: tc.TestCaseTitle,
+            Description: tc.Description,
+            Preconditions: Array.isArray(tc.Preconditions)
+              ? tc.Preconditions
+              : [String(tc.Preconditions || "")],
+            TestData: Array.isArray(tc.TestData)
+              ? tc.TestData
+              : [String(tc.TestData || "")],
+            TestSteps: Array.isArray(tc.TestSteps)
+              ? tc.TestSteps
+              : [String(tc.TestSteps || "")],
+            ExpectedResults: tc.ExpectedResults,
+          };
+
+          allRows.push({
+            type: "table-row",
+            hiddenData,
+            children: TC_VISIBLE_COLUMNS.map(({ key }) => {
+              const val = rowData[key];
+              if (Array.isArray(val)) {
+                return {
+                  type: "table-cell",
+                  children: val.map((item: string) => ({
+                    type: "paragraph" as const,
+                    children: [{ text: String(item) }],
+                  })),
+                };
+              }
+              return {
+                type: "table-cell",
+                children: htmlToCellChildren(val != null ? String(val) : ""),
+              };
+            }),
+          });
+        }
+      }
+    }
+  }
+
+  const headerRow = {
+    type: "table-row" as const,
+    children: TC_VISIBLE_COLUMNS.map(({ label }) => ({
+      type: "table-cell" as const,
+      isHeader: true,
+      children: [{ type: "paragraph" as const, children: [{ text: label }] }],
+    })),
+  };
+
+  if (allRows.length === 0) {
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+  }
+
+  return [{ type: "table", children: [headerRow, ...allRows] }];
+};
+
+export const slateToTestCasesJson = (nodes: Descendant[]): any => {
+  const tableNode = (nodes as any[]).find((n) => n.type === "table");
+  if (!tableNode) return { Requirements: [] };
+
+  const dataRows = tableNode.children.slice(1);
+  const reqMap: Record<string, any> = {};
+
+  for (const row of dataRows) {
+    const cells = row.children;
+    const hidden = row.hiddenData || {};
+
+    const reqId = cellToHtml(cells[0]).trim();
+    const userstoryId = cellToHtml(cells[1]).trim();
+
+    if (!reqMap[reqId]) {
+      reqMap[reqId] = { req_id: reqId, UserStories: {} };
+    }
+    if (!reqMap[reqId].UserStories[userstoryId]) {
+      reqMap[reqId].UserStories[userstoryId] = {
+        userstory_id: userstoryId,
+        AcceptanceCriteriaTests: {},
+      };
+    }
+
+    const criterion = hidden.AcceptanceCriterion || "";
+    const storyObj = reqMap[reqId].UserStories[userstoryId];
+    if (!storyObj.AcceptanceCriteriaTests[criterion]) {
+      storyObj.AcceptanceCriteriaTests[criterion] = {
+        AcceptanceCriterion: criterion,
+        TestCases: [],
+      };
+    }
+
+    storyObj.AcceptanceCriteriaTests[criterion].TestCases.push({
+      TestCaseId: cellToHtml(cells[2]).trim(),
+      TestCaseTitle: cellToHtml(cells[3]).trim(),
+      Description: cellToHtml(cells[4]).trim(),
+      Preconditions: cellToHtml(cells[5])
+        .split("\n")
+        .map((s: string) => s.trim())
+        .filter(Boolean),
+      TestData: cellToHtml(cells[6])
+        .split("\n")
+        .map((s: string) => s.trim())
+        .filter(Boolean),
+      TestSteps: cellToHtml(cells[7])
+        .split("\n")
+        .map((s: string) => s.trim())
+        .filter(Boolean),
+      ExpectedResults: cellToHtml(cells[8]).trim(),
+      ActualResults: hidden.ActualResults || "",
+      PassFail: hidden.PassFail || "",
+    });
+  }
+
+  // Convert maps back to arrays
+  const requirements = Object.values(reqMap).map((req: any) => ({
+    req_id: req.req_id,
+    UserStories: Object.values(req.UserStories).map((story: any) => ({
+      userstory_id: story.userstory_id,
+      AcceptanceCriteriaTests: Object.values(story.AcceptanceCriteriaTests),
+    })),
+  }));
+
+  return { Requirements: requirements };
+};
+
+// ============================================================
+// ACTION LOG
+// ============================================================
+
+const AL_COLUMNS = [
+  { key: "Action_Item", label: "Action Item" },
+  { key: "Requestor", label: "Requestor" },
+  { key: "Owner", label: "Owner" },
+  { key: "Status", label: "Status" },
+  { key: "Priority", label: "Priority" },
+  { key: "Start_Date", label: "Start Date" },
+  { key: "Due_Date", label: "Due Date" },
+  { key: "Comments", label: "Comments" },
+];
+
+export const actionLogToSlateValue = (data: any): Descendant[] => {
+  const items = data.Minutes_of_Meeting;
+  if (!items || items.length === 0) {
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+  }
+
+  const allRows = items.map((item: any) => ({
+    type: "table-row" as const,
+    children: AL_COLUMNS.map(({ key }) => ({
+      type: "table-cell" as const,
+      children: htmlToCellChildren(item[key] != null ? String(item[key]) : ""),
+    })),
+  }));
+
+  const headerRow = {
+    type: "table-row" as const,
+    children: AL_COLUMNS.map(({ label }) => ({
+      type: "table-cell" as const,
+      isHeader: true,
+      children: [{ type: "paragraph" as const, children: [{ text: label }] }],
+    })),
+  };
+
+  return [{ type: "table", children: [headerRow, ...allRows] }];
+};
+
+export const slateToActionLogJson = (nodes: Descendant[]): any => {
+  const tableNode = (nodes as any[]).find((n) => n.type === "table");
+  if (!tableNode) return { Minutes_of_Meeting: [] };
+
+  const dataRows = tableNode.children.slice(1);
+
+  const minutes = dataRows.map((row: any) => {
+    const result: Record<string, string> = {};
+    AL_COLUMNS.forEach(({ key }, i) => {
+      result[key] = cellToHtml(row.children[i]).trim();
+    });
+    return result;
+  });
+
+  return { Minutes_of_Meeting: minutes };
+};
+
+// ============================================================
+// SUMMARY (markdown text → Slate, save as HTML)
+// ============================================================
+
+export const summaryToSlateValue = (text: string): Descendant[] => {
+  if (!text || text.trim() === "") {
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+  }
+
+  const lines = text.split("\n");
+  const nodes: Descendant[] = [];
+  let currentListItems: Descendant[] = [];
+  let currentListType: "bulleted-list" | null = null;
+
+  const flushList = () => {
+    if (currentListItems.length > 0 && currentListType) {
+      nodes.push({
+        type: currentListType,
+        children: currentListItems as any,
+      });
+      currentListItems = [];
+      currentListType = null;
+    }
+  };
+
+  const parseInlineMarks = (
+    text: string
+  ): Array<{ text: string; bold?: boolean }> => {
+    const parts: Array<{ text: string; bold?: boolean }> = [];
+    const regex = /\*\*(.+?)\*\*/g;
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push({ text: text.slice(lastIndex, match.index) });
+      }
+      parts.push({ text: match[1], bold: true });
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({ text: text.slice(lastIndex) });
+    }
+
+    return parts.length > 0 ? parts : [{ text }];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (trimmed === "") {
+      flushList();
+      continue;
+    }
+
+    const numberedHeadingMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*\s*$/);
+    if (numberedHeadingMatch) {
+      flushList();
+      nodes.push({
+        type: "heading-six",
+        children: [{ text: numberedHeadingMatch[1] }],
+      });
+      continue;
+    }
+
+    const subHeadingMatch = trimmed.match(/^([A-Z][^-*].+):$/);
+    if (
+      subHeadingMatch &&
+      !trimmed.startsWith("-") &&
+      !trimmed.startsWith("*")
+    ) {
+      flushList();
+      nodes.push({
+        type: "paragraph",
+        children: [{ text: subHeadingMatch[1], bold: true }],
+      });
+      continue;
+    }
+
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      if (currentListType !== "bulleted-list") {
+        flushList();
+        currentListType = "bulleted-list";
+      }
+      currentListItems.push({
+        type: "list-item",
+        children: parseInlineMarks(bulletMatch[1]),
+      });
+      continue;
+    }
+
+    flushList();
+    nodes.push({
+      type: "paragraph",
+      children: parseInlineMarks(trimmed),
+    });
+  }
+
+  flushList();
+
+  return nodes.length > 0
+    ? nodes
+    : [{ type: "paragraph", children: [{ text: "" }] }];
+};
+
+// ---- Helpers: Slate → Markdown ----
+
+const leafToMarkdown = (node: any): string => {
+  if (!node || !("text" in node)) return "";
+  let text = node.text as string;
+  if (!text) return "";
+  if (node.code) text = `\`${text}\``;
+  if (node.bold) text = `**${text}**`;
+  if (node.italic) text = `*${text}*`;
+  return text;
+};
+
+const childrenToMarkdown = (children: any[]): string => {
+  return (children || [])
+    .map((c: any) => {
+      if ("text" in c) return leafToMarkdown(c);
+      return childrenToMarkdown(c.children);
+    })
+    .join("");
+};
+
+export const slateToSummaryJson = (nodes: Descendant[]): any => {
+  const lines: string[] = [];
+  let headingCounter = 0;
+
+  for (const node of nodes as any[]) {
+    switch (node.type) {
+      case "heading-six": {
+        headingCounter++;
+        const text = childrenToMarkdown(node.children);
+        lines.push("", `${headingCounter}. **${text}**`);
+        break;
+      }
+      case "paragraph": {
+        const children = node.children || [];
+        const text = childrenToMarkdown(children);
+        // Detect standalone bold subheadings (were originally "Text:")
+        if (
+          children.length === 1 &&
+          children[0].bold &&
+          !children[0].italic &&
+          !children[0].code
+        ) {
+          lines.push(`${text}:`);
+        } else {
+          lines.push(text);
+        }
+        break;
+      }
+      case "bulleted-list": {
+        for (const item of node.children || []) {
+          const text = childrenToMarkdown(item.children);
+          lines.push(`- ${text}`);
+        }
+        break;
+      }
+      case "numbered-list": {
+        (node.children || []).forEach((item: any, i: number) => {
+          const text = childrenToMarkdown(item.children);
+          lines.push(`${i + 1}. ${text}`);
+        });
+        break;
+      }
+      default: {
+        const text = childrenToMarkdown(node.children);
+        if (text) lines.push(text);
+        break;
+      }
+    }
+  }
+
+  return { response: lines.join("\n") };
+};
+
+// ============================================================
+// BRD (Slate → structured JSON)
+// ============================================================
+
+// Reverse display-name → JSON key mapping for top-level sections
+const BRD_SECTION_DISPLAY_TO_KEY: Record<string, string> = {
+  "Executive Summary": "Executive_Summary",
+  "Stakeholders & Key Personnel": "Stakeholders_and_Key_Personnel",
+  "Goals & objectives": "Goals_and_Objectives",
+  "Goals & Objectives": "Goals_and_Objectives",
+  "Process Scope Summary": "Process_Scope_Summary",
+  "Actors/Personas": "Actors_Personas",
+  Glossary: "Glossary",
+};
+
+const displayNameToKey = (name: string): string => {
+  return BRD_SECTION_DISPLAY_TO_KEY[name] || name.replace(/ /g, "_");
+};
+
+const childrenToText = (children: any[]): string => {
+  return (children || [])
+    .map((c: any) => {
+      if ("text" in c) return c.text || "";
+      return childrenToText(c.children);
+    })
+    .join("");
+};
+
+const extractTableAsArray = (tableNode: any): any[] => {
+  const rows = tableNode.children || [];
+  if (rows.length < 2) return [];
+
+  const headerCells = rows[0].children || [];
+  const headers = headerCells.map((cell: any) => {
+    const text = childrenToText(cell.children);
+    return text.replace(/ /g, "_");
+  });
+
+  return rows.slice(1).map((row: any) => {
+    const obj: Record<string, string> = {};
+    (row.children || []).forEach((cell: any, i: number) => {
+      if (i < headers.length) {
+        obj[headers[i]] = childrenToText(cell.children);
+      }
+    });
+    return obj;
+  });
+};
+
+const extractBulletedListItems = (listNode: any): string[] => {
+  return (listNode.children || []).map((item: any) =>
+    childrenToText(item.children)
+  );
+};
+
+export const brdToSlateValue = (rawResponse: string): Descendant[] => {
+  const parsed = parseAgentResponse(rawResponse);
+  return transformBRDDataToSlate(parsed);
+};
+
+export const slateToBrdJson = (nodes: Descendant[]): any => {
+  const result: Record<string, any> = {};
+  const nodeList = nodes as any[];
+
+  let i = 0;
+  while (i < nodeList.length) {
+    const node = nodeList[i];
+
+    // Top-level section: heading-five
+    if (node.type === "heading-five") {
+      const sectionName = childrenToText(node.children);
+      const sectionKey = displayNameToKey(sectionName);
+      i++;
+
+      if (sectionKey === "Executive_Summary") {
+        const execSummary: Record<string, string> = {};
+        while (
+          i < nodeList.length &&
+          nodeList[i].type !== "heading-five" &&
+          nodeList[i].type !== "heading-one"
+        ) {
+          if (nodeList[i].type === "heading-six") {
+            const subKey = childrenToText(nodeList[i].children).replace(
+              / /g,
+              "_"
+            );
+            i++;
+            if (i < nodeList.length && nodeList[i].type === "paragraph") {
+              execSummary[subKey] = childrenToText(nodeList[i].children);
+              i++;
+            }
+          } else {
+            i++;
+          }
+        }
+        result[sectionKey] = execSummary;
+      } else if (
+        sectionKey === "Stakeholders_and_Key_Personnel" ||
+        sectionKey === "Actors_Personas" ||
+        sectionKey === "Glossary"
+      ) {
+        // Table sections
+        if (i < nodeList.length && nodeList[i].type === "table") {
+          result[sectionKey] = extractTableAsArray(nodeList[i]);
+          i++;
+        } else {
+          result[sectionKey] = [];
+        }
+      } else if (sectionKey === "Goals_and_Objectives") {
+        // Bulleted list
+        if (i < nodeList.length && nodeList[i].type === "bulleted-list") {
+          result[sectionKey] = extractBulletedListItems(nodeList[i]);
+          i++;
+        } else {
+          result[sectionKey] = [];
+        }
+      } else if (sectionKey === "Process_Scope_Summary") {
+        const scopeObj: Record<string, any> = {};
+        while (
+          i < nodeList.length &&
+          nodeList[i].type !== "heading-five" &&
+          nodeList[i].type !== "heading-one"
+        ) {
+          if (nodeList[i].type === "heading-six") {
+            const subKey = childrenToText(nodeList[i].children).replace(
+              / /g,
+              "_"
+            );
+            i++;
+            const subObj: Record<string, any> = {};
+            while (
+              i < nodeList.length &&
+              nodeList[i].type !== "heading-six" &&
+              nodeList[i].type !== "heading-five" &&
+              nodeList[i].type !== "heading-one"
+            ) {
+              if (nodeList[i].type === "paragraph") {
+                subObj["Summary"] = childrenToText(nodeList[i].children);
+                i++;
+              } else if (nodeList[i].type === "bulleted-list") {
+                const listKey =
+                  subKey === "In_Scope"
+                    ? "High_Level_Requirements"
+                    : "Exclusions";
+                subObj[listKey] = extractBulletedListItems(nodeList[i]);
+                i++;
+              } else {
+                i++;
+              }
+            }
+            scopeObj[subKey] = subObj;
+          } else {
+            i++;
+          }
+        }
+        result[sectionKey] = scopeObj;
+      } else {
+        // Unknown section — collect until next heading
+        const contentParts: string[] = [];
+        while (
+          i < nodeList.length &&
+          nodeList[i].type !== "heading-five" &&
+          nodeList[i].type !== "heading-one"
+        ) {
+          contentParts.push(childrenToText(nodeList[i].children));
+          i++;
+        }
+        result[sectionKey] = contentParts.join("\n");
+      }
+    }
+    // Fallback heading-one (e.g. Section_Citations)
+    else if (node.type === "heading-one") {
+      const key = childrenToText(node.children).replace(/ /g, "_");
+      i++;
+      if (i < nodeList.length && nodeList[i].type === "paragraph") {
+        const text = childrenToText(nodeList[i].children);
+        i++;
+        try {
+          result[key] = JSON.parse(text);
+        } catch {
+          result[key] = text;
+        }
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return {
+    response:
+      "```json\n" + JSON.stringify(result, null, 2) + "\n```",
+  };
+};
