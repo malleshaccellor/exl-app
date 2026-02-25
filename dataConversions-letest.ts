@@ -295,3 +295,27 @@ const childrenToInlineHtml = (children: any[]): string => {
     })
     .join("");
 };
+
+export const htmlToSlateNodes = (html: string): Descendant[] => {
+  if (!html || html.trim() === "")
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(html, "text/html");
+  const fragment = deserialize(doc.body);
+
+  // Wrap loose leaves in paragraphs for Slate compatibility
+  return fragment.reduce((acc: any[], node) => {
+    if (node.text !== undefined) {
+      const last = acc[acc.length - 1];
+      if (last && last.type === "paragraph") {
+        last.children.push(node);
+      } else {
+        acc.push({ type: "paragraph", children: [node] });
+      }
+    } else {
+      acc.push(node);
+    }
+    return acc;
+  }, []);
+};
