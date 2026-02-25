@@ -1,3 +1,224 @@
+import { Descendant } from "slate";
+
+export const slateToSummaryJson = (nodes: Descendant[]) => {
+  if (!nodes || nodes.length === 0) {
+    return { response: "<p></p>" };
+  }
+
+  // -------- Inline Leaf Renderer --------
+  const leafToHtml = (leaf: any): string => {
+    let text = leaf.text || "";
+    if (!text) return "";
+
+    if (leaf.bold) text = `<strong>${text}</strong>`;
+    if (leaf.italic) text = `<em>${text}</em>`;
+    if (leaf.underline) text = `<u>${text}</u>`;
+    if (leaf.code) text = `<code>${text}</code>`;
+    if (leaf.strikethrough) text = `<s>${text}</s>`;
+
+    if (leaf.fontSize) {
+      text = `<span style="font-size:${leaf.fontSize}px">${text}</span>`;
+    }
+
+    return text;
+  };
+
+  const childrenToHtml = (children: any[]): string => {
+    return (children || [])
+      .map((child) =>
+        "text" in child
+          ? leafToHtml(child)
+          : serialize(child)
+      )
+      .join("");
+  };
+
+  // -------- Block Style Builder --------
+  const getBlockStyle = (node: any): string => {
+    const styles: string[] = [];
+
+    if (node.align && node.align !== "left") {
+      styles.push(`text-align:${node.align}`);
+    }
+
+    if (node.indent) {
+      styles.push(`padding-left:${node.indent * 24}px`);
+    }
+
+    return styles.length ? ` style="${styles.join(";")}"` : "";
+  };
+
+  // -------- Block Serializer --------
+  const serialize = (node: any): string => {
+    if ("text" in node) {
+      return leafToHtml(node);
+    }
+
+    const styleAttr = getBlockStyle(node);
+    const children = childrenToHtml(node.children);
+
+    switch (node.type) {
+      case "paragraph":
+        return `<p${styleAttr}>${children}</p>`;
+
+      case "heading-six":
+        return `<h6${styleAttr}>${children}</h6>`;
+
+      case "bulleted-list":
+        return `<ul${styleAttr}>${children}</ul>`;
+
+      case "list-item":
+        return `<li${styleAttr}>${children}</li>`;
+
+      default:
+        return `<p${styleAttr}>${children}</p>`;
+    }
+  };
+
+  const html = nodes.map(serialize).join("");
+
+  return {
+    response: html,
+  };
+};
+
+export const summaryToSlateValue = (html: string): Descendant[] => {
+  if (!html || html.trim() === "") {
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+  }
+
+  // Handle double-encoded strings
+  let cleanHtml = html.trim();
+  if (cleanHtml.startsWith('"') && cleanHtml.endsWith('"')) {
+    try {
+      cleanHtml = JSON.parse(cleanHtml);
+    } catch {
+      // ignore if not valid JSON
+    }
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(cleanHtml, "text/html");
+
+  // -------- DESERIALIZE --------
+
+  const deserialize = (el: any): any => {
+    // Text node
+    if (el.nodeType === 3) {
+      return { text: el.textContent };
+    }
+
+    // Not element
+    if (el.nodeType !== 1) {
+      return null;
+    }
+
+    const nodeName = el.nodeName.toUpperCase();
+
+    let children = Array.from(el.childNodes)
+      .map(deserialize)
+      .flat()
+      .filter(Boolean);
+
+    if (children.length === 0) {
+      children = [{ text: "" }];
+    }
+
+    // -------- INLINE MARKS --------
+
+    const applyMark = (mark: string) =>
+      children.map((child: any) => ({
+        ...child,
+        [mark]: true,
+      }));
+
+    switch (nodeName) {
+      case "STRONG":
+      case "B":
+        return applyMark("bold");
+
+      case "EM":
+      case "I":
+        return applyMark("italic");
+
+      case "U":
+        return applyMark("underline");
+
+      case "CODE":
+        return applyMark("code");
+
+      case "S":
+        return applyMark("strikethrough");
+
+      case "SPAN": {
+        const fontSize = el.style?.fontSize;
+        if (fontSize) {
+          const px = parseInt(fontSize.replace("px", ""));
+          return children.map((child: any) => ({
+            ...child,
+            fontSize: px,
+          }));
+        }
+        return children;
+      }
+    }
+
+    // -------- BLOCK STYLE EXTRACTION --------
+
+    const block: any = {
+      children,
+    };
+
+    if (el.style?.textAlign) {
+      block.align = el.style.textAlign;
+    }
+
+    if (el.style?.paddingLeft) {
+      const px = parseInt(el.style.paddingLeft.replace("px", ""));
+      block.indent = Math.round(px / 24); // must match export
+    }
+
+    // -------- BLOCK TYPES --------
+
+    switch (nodeName) {
+      case "P":
+      case "DIV":
+        return { type: "paragraph", ...block };
+
+      case "H6":
+        return { type: "heading-six", ...block };
+
+      case "UL":
+        return { type: "bulleted-list", children };
+
+      case "LI":
+        return { type: "list-item", ...block };
+
+      default:
+        return children;
+    }
+  };
+
+  const nodes = Array.from(doc.body.childNodes)
+    .map(deserialize)
+    .flat()
+    .filter(Boolean);
+
+  // Wrap loose text nodes in paragraph
+  const normalized = nodes.map((node: any) => {
+    if (node.text !== undefined) {
+      return {
+        type: "paragraph",
+        children: [node],
+      };
+    }
+    return node;
+  });
+
+  return normalized.length > 0
+    ? normalized
+    : [{ type: "paragraph", children: [{ text: "" }] }];
+};
 
 export const summaryToSlateValue = (text: string): Descendant[] => {
   if (!text || text.trim() === "") {
