@@ -1,3 +1,8 @@
+background: linear-gradient(140.94deg, rgba(214, 214, 214, 0.074) 42.17%, rgba(251, 78, 11, 0.2) 91.39%),
+linear-gradient(0deg, #FFFFFF, #FFFFFF);
+
+
+
 import type { Descendant } from "slate";
 import type { CustomText } from "../types";
 
