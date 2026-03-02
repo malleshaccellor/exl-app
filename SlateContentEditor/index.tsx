@@ -14,10 +14,9 @@ interface SlateEditorProps {
   defaultValue?: Descendant[];
   onChange?: (value: Descendant[]) => void;
   readOnly?: boolean;
-  onClickSaveBtn?: () => void;
+  onClickSaveBtn?: (nodes: Descendant[]) => void;
   className?: string;
   data?: Record<string, any>;
-  onSave?: (nodes: Descendant[]) => void;
   onDiscard?: () => void;
 }
 
@@ -30,7 +29,7 @@ const toggleMark = (editor: Editor, format: textStyle) => {
   }
 };
 
-export const SlateEditor = ({
+export const SlateContentEditor = ({
   value,
   defaultValue = [],
   onChange,
@@ -38,17 +37,16 @@ export const SlateEditor = ({
   onClickSaveBtn,
   className,
   data,
-  onSave,
   onDiscard,
 }: SlateEditorProps) => {
   const editor = useMemo(
     () => withTables(withHistory(withReact(createEditor()))),
-    []
+    [],
   );
 
   // Keep callbacks in refs to avoid stale closures
-  const onSaveRef = useRef(onSave);
-  onSaveRef.current = onSave;
+  const onSaveRef = useRef(onClickSaveBtn);
+  onSaveRef.current = onClickSaveBtn;
   const onDiscardRef = useRef(onDiscard);
   onDiscardRef.current = onDiscard;
 
@@ -61,7 +59,7 @@ export const SlateEditor = ({
     useState<Descendant[]>(computedDefault);
   const editorValue = useMemo(
     () => value ?? internalValue,
-    [value, internalValue]
+    [value, internalValue],
   );
 
   const handleChange = useCallback(
@@ -71,7 +69,7 @@ export const SlateEditor = ({
       }
       onChange?.(val);
     },
-    [value, onChange]
+    [value, onChange],
   );
 
   const handleSave = useCallback(() => {
@@ -186,19 +184,9 @@ export const SlateEditor = ({
           );
         case "table":
           return (
-            <div style={{ overflowX: "auto" }}>
-              <table
-                className={element.className || "table"}
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  marginBottom: "24px",
-                  fontSize: "13px",
-                }}
-              >
-                <tbody {...attributes}>{children}</tbody>
-              </table>
-            </div>
+            <table className={element.className || "table"}>
+              <tbody {...attributes}>{children}</tbody>
+            </table>
           );
         case "table-row":
           return (
@@ -208,50 +196,20 @@ export const SlateEditor = ({
           );
         case "table-cell-header":
           return (
-            <th
-              {...attributes}
-              style={{
-                border: "1px solid #ccc",
-                padding: "6px 8px",
-                verticalAlign: "top",
-                minWidth: "80px",
-                background: "#f0f0f0",
-                fontWeight: "bold",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <th {...attributes} style={style}>
               {children}
             </th>
           );
         case "table-cell":
           if (element.isHeader) {
             return (
-              <th
-                {...attributes}
-                style={{
-                  border: "1px solid #ccc",
-                  padding: "6px 8px",
-                  verticalAlign: "top",
-                  minWidth: "80px",
-                  background: "#f0f0f0",
-                  fontWeight: "bold",
-                  whiteSpace: "nowrap",
-                }}
-              >
+              <th {...attributes} style={style}>
                 {children}
               </th>
             );
           }
           return (
-            <td
-              {...attributes}
-              style={{
-                border: "1px solid #ccc",
-                padding: "6px 8px",
-                verticalAlign: "top",
-                minWidth: "80px",
-              }}
-            >
+            <td {...attributes} style={style}>
               {children}
             </td>
           );
@@ -269,7 +227,7 @@ export const SlateEditor = ({
           );
       }
     },
-    []
+    [],
   );
 
   const handleKeyDown = useCallback(
@@ -290,7 +248,7 @@ export const SlateEditor = ({
           break;
       }
     },
-    [editor]
+    [editor],
   );
 
   return (
@@ -303,9 +261,8 @@ export const SlateEditor = ({
             onChange={handleChange}
           >
             <Toolbar
-              onClickSaveBtn={onClickSaveBtn}
+              onClickSaveBtn={onClickSaveBtn ? handleSave : undefined}
               buttonLabel="Save"
-              onSave={onSave ? handleSave : undefined}
               onDiscard={onDiscard ? handleDiscard : undefined}
             />
             <Editable
@@ -322,4 +279,4 @@ export const SlateEditor = ({
   );
 };
 
-export default SlateEditor;
+export default SlateContentEditor;

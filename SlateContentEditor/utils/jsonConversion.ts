@@ -7,11 +7,11 @@ import {
 } from "./htmlConversion";
 
 export const VISIBLE_COLUMNS = [
-  { key: "req_id", label: "Req_No" },
-  { key: "userstory_id", label: "User Story No" },
-  { key: "Story", label: "user_story_description" },
-  { key: "AcceptanceCriteria", label: "AcceptanceCriteria" },
-  { key: "RequirementType", label: "RequirementType" },
+  { key: "req_id", label: "Req No." },
+  { key: "userstory_id", label: "User Story No." },
+  { key: "Story", label: "User Story Description" },
+  { key: "AcceptanceCriteria", label: "Acceptance Criteria" },
+  { key: "RequirementType", label: "Requirement Type" },
 ];
 
 export const HIDDEN_STORY_KEYS = [
@@ -74,6 +74,7 @@ export const jsonToSlateValue = (data: Record<string, any>): Descendant[] => {
   return [
     {
       type: "table",
+      className: "editor-custom-table",
       children: [headerRow, ...allRows],
     },
   ];

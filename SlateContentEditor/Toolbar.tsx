@@ -168,7 +168,11 @@ interface ToolbarProps {
   onDiscard?: () => void;
 }
 
-export const Toolbar = ({ onClickSaveBtn, buttonLabel, onSave, onDiscard }: ToolbarProps) => {
+export const Toolbar = ({
+  onClickSaveBtn,
+  buttonLabel,
+  onDiscard,
+}: ToolbarProps) => {
   const editor = useSlate();
   const [fontSize, setFontSize] = React.useState<string>("");
 
@@ -341,18 +345,22 @@ export const Toolbar = ({ onClickSaveBtn, buttonLabel, onSave, onDiscard }: Tool
           />
         </IconButton>
       </div>
-      {(onClickSaveBtn || onSave) && (
+      {(onClickSaveBtn || onDiscard) && (
         <div className={styles.saveButtonContainer}>
-          <CustomButton
-            onClick={onDiscard || onClickSaveBtn}
-            className={styles.discardBtn}
-            size="small"
-          >
-            {"Discard"}
-          </CustomButton>
-          <CustomButton onClick={onSave || onClickSaveBtn} size="small">
-            {buttonLabel || "Save"}
-          </CustomButton>
+          {onDiscard && (
+            <CustomButton
+              onClick={onDiscard}
+              size="small"
+              variant="outlined"
+            >
+              {"Discard"}
+            </CustomButton>
+          )}
+          {onClickSaveBtn && (
+            <CustomButton onClick={onClickSaveBtn} size="small">
+              {buttonLabel || "Save"}
+            </CustomButton>
+          )}
         </div>
       )}
     </div>

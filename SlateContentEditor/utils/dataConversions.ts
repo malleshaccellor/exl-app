@@ -1,6 +1,11 @@
 import type { Descendant } from "slate";
-import { cellToHtml, htmlToCellChildren, slateToHtml } from "./htmlConversion";
+import {
+  cellToHtml,
+  htmlToCellChildren,
+  htmlToSlateNodes,
+} from "./htmlConversion";
 import { transformBRDDataToSlate } from "./index";
+import type { CustomText } from "../types";
 
 // --- Helper: parse agent response (string → object) ---
 
@@ -65,15 +70,16 @@ export const testCasesToSlateValue = (data: any): Descendant[] => {
             hiddenData,
             children: TC_VISIBLE_COLUMNS.map(({ key }) => {
               const val = rowData[key];
+
               if (Array.isArray(val)) {
                 return {
                   type: "table-cell",
-                  children: val.map((item: string) => ({
-                    type: "paragraph" as const,
-                    children: [{ text: String(item) }],
-                  })),
+                  children: val.flatMap((item: string) => {
+                    return htmlToCellChildren(String(item || ""));
+                  }),
                 };
               }
+
               return {
                 type: "table-cell",
                 children: htmlToCellChildren(val != null ? String(val) : ""),
@@ -98,7 +104,13 @@ export const testCasesToSlateValue = (data: any): Descendant[] => {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
 
-  return [{ type: "table", children: [headerRow, ...allRows] }];
+  return [
+    {
+      type: "table",
+      className: "editor-custom-table",
+      children: [headerRow, ...allRows],
+    },
+  ];
 };
 
 export const slateToTestCasesJson = (nodes: Descendant[]): any => {
@@ -206,7 +218,13 @@ export const actionLogToSlateValue = (data: any): Descendant[] => {
     })),
   };
 
-  return [{ type: "table", children: [headerRow, ...allRows] }];
+  return [
+    {
+      type: "table",
+      className: "editor-custom-table",
+      children: [headerRow, ...allRows],
+    },
+  ];
 };
 
 export const slateToActionLogJson = (nodes: Descendant[]): any => {
@@ -227,7 +245,7 @@ export const slateToActionLogJson = (nodes: Descendant[]): any => {
 };
 
 // ============================================================
-// SUMMARY (markdown text → Slate, save as HTML)
+// SUMMARY (markdown text → Slate)
 // ============================================================
 
 export const summaryToSlateValue = (text: string): Descendant[] => {
@@ -235,7 +253,26 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
 
-  const lines = text.split("\n");
+  // Handle previously saved HTML data (from old save code)
+  let cleanText = text.trim();
+  // Strip wrapping quotes if present (double-encoded responses)
+  if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
+    try {
+      cleanText = JSON.parse(cleanText);
+    } catch {
+      // not valid JSON, use as-is
+    }
+  }
+  // Replace literal \n (escaped newlines) with actual newlines
+  if (cleanText.includes("\\n")) {
+    cleanText = cleanText.replace(/\\n/g, "\n");
+  }
+  // If the content is HTML, parse it using the HTML parser
+  if (/^<[a-z][\s\S]*>/i.test(cleanText.trim())) {
+    return htmlToSlateNodes(cleanText);
+  }
+
+  const lines = cleanText.split("\n");
   const nodes: Descendant[] = [];
   let currentListItems: Descendant[] = [];
   let currentListType: "bulleted-list" | null = null;
@@ -251,27 +288,51 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
     }
   };
 
-  const parseInlineMarks = (
-    text: string
-  ): Array<{ text: string; bold?: boolean }> => {
-    const parts: Array<{ text: string; bold?: boolean }> = [];
-    const regex = /\*\*(.+?)\*\*/g;
-    let lastIndex = 0;
-    let match;
+  const parseInlineMarks = (text: string): CustomText[] => {
+    const boldItalicRegex = /\*\*\*(.+?)\*\*\*/g;
+    const boldRegex = /\*\*(.+?)\*\*/g;
+    const italicRegex = /[\*_](.+?)[\*_]/g;
+    const strikethroughRegex = /~~(.+?)~~/g;
+    const underlineRegex = /<u>(.+?)<\/u>/gi;
+    const codeRegex = /`(.+?)`/g;
 
-    while ((match = regex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push({ text: text.slice(lastIndex, match.index) });
-      }
-      parts.push({ text: match[1], bold: true });
-      lastIndex = regex.lastIndex;
-    }
+    let parts: CustomText[] = [{ text }];
 
-    if (lastIndex < text.length) {
-      parts.push({ text: text.slice(lastIndex) });
-    }
+    const applyRegex = (regex: RegExp, prop: keyof CustomText) => {
+      const newParts: CustomText[] = [];
+      parts.forEach((part) => {
+        if (Object.keys(part).length > 1) {
+          newParts.push(part);
+          return;
+        }
 
-    return parts.length > 0 ? parts : [{ text }];
+        let lastIndex = 0;
+        let match;
+        const partText = part.text;
+        regex.lastIndex = 0;
+
+        while ((match = regex.exec(partText)) !== null) {
+          if (match.index > lastIndex) {
+            newParts.push({ text: partText.slice(lastIndex, match.index) });
+          }
+          newParts.push({ text: match[1], [prop]: true } as any);
+          lastIndex = regex.lastIndex;
+        }
+        if (lastIndex < partText.length) {
+          newParts.push({ text: partText.slice(lastIndex) });
+        }
+      });
+      parts = newParts;
+    };
+
+    applyRegex(boldItalicRegex, "bold"); // Will need manual fix for nested marks
+    applyRegex(boldRegex, "bold");
+    applyRegex(italicRegex, "italic");
+    applyRegex(strikethroughRegex, "strikethrough");
+    applyRegex(underlineRegex, "underline");
+    applyRegex(codeRegex, "code");
+
+    return parts.length > 0 ? parts : [{ text: "" }];
   };
 
   for (const line of lines) {
@@ -282,21 +343,25 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
+    // Numbered heading: "1. **Heading Text**"
     const numberedHeadingMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*\s*$/);
     if (numberedHeadingMatch) {
       flushList();
       nodes.push({
-        type: "heading-six",
+        type: "heading-five",
         children: [{ text: numberedHeadingMatch[1] }],
       });
       continue;
     }
 
+    // Sub-heading: short title-case phrase ending with colon (max 6 words)
+    // Avoids matching full sentences like "Here's a structured summary...:"
     const subHeadingMatch = trimmed.match(/^([A-Z][^-*].+):$/);
     if (
       subHeadingMatch &&
       !trimmed.startsWith("-") &&
-      !trimmed.startsWith("*")
+      !trimmed.startsWith("*") &&
+      subHeadingMatch[1].split(/\s+/).length <= 6
     ) {
       flushList();
       nodes.push({
@@ -306,16 +371,21 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    // Bullet item — use raw line to detect indentation level
+    const bulletMatch = line.match(/^(\s*)([-*])\s+(.+)$/);
     if (bulletMatch) {
+      const leadingSpaces = bulletMatch[1].length;
+      const indent = leadingSpaces >= 4 ? 1 : 0;
+
       if (currentListType !== "bulleted-list") {
         flushList();
         currentListType = "bulleted-list";
       }
       currentListItems.push({
         type: "list-item",
-        children: parseInlineMarks(bulletMatch[1]),
-      });
+        indent,
+        children: parseInlineMarks(bulletMatch[3]),
+      } as any);
       continue;
     }
 
@@ -333,19 +403,354 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
     : [{ type: "paragraph", children: [{ text: "" }] }];
 };
 
+// ---- Helpers: Slate → Markdown ----
+
+const leafToMarkdown = (node: any): string => {
+  if (!node || !("text" in node)) return "";
+  let text = node.text as string;
+  if (!text) return "";
+  if (node.code) text = `\`${text}\``;
+  if (node.bold) text = `**${text}**`;
+  if (node.italic) text = `*${text}*`;
+  if (node.underline) text = `<u>${text}</u>`;
+  if (node.strikethrough) text = `~~${text}~~`;
+  return text;
+};
+
+const childrenToMarkdown = (children: any[]): string => {
+  return (children || [])
+    .map((c: any) => {
+      if ("text" in c) return leafToMarkdown(c);
+      return childrenToMarkdown(c.children);
+    })
+    .join("");
+};
+
 export const slateToSummaryJson = (nodes: Descendant[]): any => {
-  return { response: slateToHtml(nodes) };
+  const lines: string[] = [];
+  let headingCounter = 0;
+  let prevType: string | null = null;
+
+  for (const node of nodes as any[]) {
+    const nodeType = (node as any).type;
+
+    // Add blank line (\n\n) between blocks to preserve original spacing.
+    // Exception: heading → list stays tight (no blank line between them).
+    if (prevType && lines.length > 0) {
+      const isHeadingToList =
+        prevType === "heading-five" &&
+        (nodeType === "bulleted-list" || nodeType === "numbered-list");
+
+      if (!isHeadingToList) {
+        lines.push("");
+      }
+    }
+
+    switch (nodeType) {
+      case "heading-five": {
+        headingCounter++;
+        const text = childrenToMarkdown(node.children);
+        lines.push(`${headingCounter}. **${text}**`);
+        break;
+      }
+      case "paragraph": {
+        const children = node.children || [];
+        // Detect standalone bold subheadings (were originally "Text:")
+        // Use raw text without ** marks — bold was only for editor display
+        if (
+          children.length === 1 &&
+          children[0].bold &&
+          !children[0].italic &&
+          !children[0].strikethrough &&
+          !children[0].underline &&
+          !children[0].code &&
+          children[0].text &&
+          children[0].text.split(/\s+/).length <= 6
+        ) {
+          lines.push(`${children[0].text}:`);
+        } else {
+          const text = childrenToMarkdown(children);
+          lines.push(text);
+        }
+        break;
+      }
+      case "bulleted-list": {
+        for (const item of node.children || []) {
+          const text = childrenToMarkdown(item.children);
+          const indent = (item as any).indent || 0;
+          if (indent >= 1) {
+            lines.push(`     * ${text}`);
+          } else {
+            lines.push(`   - ${text}`);
+          }
+        }
+        break;
+      }
+      case "numbered-list": {
+        (node.children || []).forEach((item: any, i: number) => {
+          const text = childrenToMarkdown(item.children);
+          lines.push(`${i + 1}. ${text}`);
+        });
+        break;
+      }
+      default: {
+        const text = childrenToMarkdown(node.children);
+        if (text) lines.push(text);
+        break;
+      }
+    }
+
+    prevType = nodeType;
+  }
+
+  return { response: lines.join("\n") };
+};
+
+const leafToInlineHtml = (node: any): string => {
+  if (!node || !("text" in node)) return "";
+  let html = node.text as string;
+  if (!html) return "";
+  if (node.code) html = `<code>${html}</code>`;
+  if (node.italic) html = `<em>${html}</em>`;
+  if (node.bold) html = `<strong>${html}</strong>`;
+  if (node.underline) html = `<u>${html}</u>`;
+  if (node.strikethrough) html = `<s>${html}</s>`;
+  return html;
+};
+
+const childrenToInlineHtml = (children: any[]): string => {
+  return (children || [])
+    .map((c: any) => {
+      if ("text" in c) return leafToInlineHtml(c);
+      return childrenToInlineHtml(c.children);
+    })
+    .join("");
 };
 
 // ============================================================
-// BRD (save as HTML — structure too complex to reverse)
+// BRD (Slate → structured JSON)
 // ============================================================
 
+// Reverse display-name → JSON key mapping for top-level sections
+const BRD_SECTION_DISPLAY_TO_KEY: Record<string, string> = {
+  "Executive Summary": "Executive_Summary",
+  "Stakeholders & Key Personnel": "Stakeholders_and_Key_Personnel",
+  "Goals & objectives": "Goals_and_Objectives",
+  "Goals & Objectives": "Goals_and_Objectives",
+  "Process Scope Summary": "Process_Scope_Summary",
+  "Actors/Personas": "Actors_Personas",
+  Glossary: "Glossary",
+};
+
+const displayNameToKey = (name: string): string => {
+  return BRD_SECTION_DISPLAY_TO_KEY[name] || name.replace(/ /g, "_");
+};
+
+const childrenToText = (children: any[]): string => {
+  return (children || [])
+    .map((c: any) => {
+      if ("text" in c) return c.text || "";
+      return childrenToText(c.children);
+    })
+    .join("");
+};
+
+const extractTableAsArray = (tableNode: any): any[] => {
+  const rows = tableNode.children || [];
+  if (rows.length < 2) return [];
+
+  const headerCells = rows[0].children || [];
+  const headers = headerCells.map((cell: any) => {
+    const text = childrenToText(cell.children);
+    return text.replace(/ /g, "_");
+  });
+
+  return rows.slice(1).map((row: any) => {
+    const obj: Record<string, any> = {};
+    (row.children || []).forEach((cell: any, i: number) => {
+      if (i < headers.length) {
+        const paragraphs = (cell.children || []).filter(
+          (c: any) => c.type === "paragraph",
+        );
+        if (paragraphs.length > 1) {
+          // Multiple paragraphs → was originally an array
+          obj[headers[i]] = paragraphs.map((p: any) =>
+            childrenToInlineHtml([p]),
+          );
+        } else {
+          // Single paragraph → string
+          obj[headers[i]] = childrenToInlineHtml(cell.children);
+        }
+      }
+    });
+    return obj;
+  });
+};
+
+const extractBulletedListItems = (listNode: any): string[] => {
+  return (listNode.children || []).map((item: any) =>
+    childrenToInlineHtml(item.children),
+  );
+};
+
 export const brdToSlateValue = (rawResponse: string): Descendant[] => {
-  const parsed = parseAgentResponse(rawResponse);
+  // Handle previously saved HTML data (from old save code)
+  let cleanRaw =
+    typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
+  if (typeof cleanRaw === "string") {
+    // Strip wrapping quotes if present
+    if (cleanRaw.startsWith('"') && cleanRaw.endsWith('"')) {
+      try {
+        cleanRaw = JSON.parse(cleanRaw);
+      } catch {
+        // not valid JSON string, use as-is
+      }
+    }
+    // Replace literal \n with actual newlines
+    if (typeof cleanRaw === "string" && cleanRaw.includes("\\n")) {
+      cleanRaw = cleanRaw.replace(/\\n/g, "\n");
+    }
+    // If the content is HTML, parse it using the HTML parser
+    if (
+      typeof cleanRaw === "string" &&
+      /^<[a-z][\s\S]*>/i.test(cleanRaw.trim())
+    ) {
+      return htmlToSlateNodes(cleanRaw);
+    }
+  }
+  const parsed = parseAgentResponse(cleanRaw);
   return transformBRDDataToSlate(parsed);
 };
 
 export const slateToBrdJson = (nodes: Descendant[]): any => {
-  return { response: slateToHtml(nodes) };
+  const result: Record<string, any> = {};
+  const nodeList = nodes as any[];
+
+  let i = 0;
+  while (i < nodeList.length) {
+    const node = nodeList[i];
+
+    // Top-level section: heading-five
+    if (node.type === "heading-five") {
+      const sectionName = childrenToText(node.children);
+      const sectionKey = displayNameToKey(sectionName);
+      i++;
+
+      if (sectionKey === "Executive_Summary") {
+        const execSummary: Record<string, string> = {};
+        while (
+          i < nodeList.length &&
+          nodeList[i].type !== "heading-five" &&
+          nodeList[i].type !== "heading-one"
+        ) {
+          if (nodeList[i].type === "heading-five") {
+            const subKey = childrenToText(nodeList[i].children).replace(
+              / /g,
+              "_",
+            );
+            i++;
+            if (i < nodeList.length && nodeList[i].type === "paragraph") {
+              execSummary[subKey] = childrenToInlineHtml(nodeList[i].children);
+              i++;
+            }
+          } else {
+            i++;
+          }
+        }
+        result[sectionKey] = execSummary;
+      } else if (
+        sectionKey === "Stakeholders_and_Key_Personnel" ||
+        sectionKey === "Actors_Personas" ||
+        sectionKey === "Glossary"
+      ) {
+        // Table sections
+        if (i < nodeList.length && nodeList[i].type === "table") {
+          result[sectionKey] = extractTableAsArray(nodeList[i]);
+          i++;
+        } else {
+          result[sectionKey] = [];
+        }
+      } else if (sectionKey === "Goals_and_Objectives") {
+        // Bulleted list
+        if (i < nodeList.length && nodeList[i].type === "bulleted-list") {
+          result[sectionKey] = extractBulletedListItems(nodeList[i]);
+          i++;
+        } else {
+          result[sectionKey] = [];
+        }
+      } else if (sectionKey === "Process_Scope_Summary") {
+        const scopeObj: Record<string, any> = {};
+        while (
+          i < nodeList.length &&
+          nodeList[i].type !== "heading-five" &&
+          nodeList[i].type !== "heading-one"
+        ) {
+          if (nodeList[i].type === "heading-five") {
+            const subKey = childrenToText(nodeList[i].children).replace(
+              / /g,
+              "_",
+            );
+            i++;
+            const subObj: Record<string, any> = {};
+            while (
+              i < nodeList.length &&
+              nodeList[i].type !== "heading-five" &&
+              nodeList[i].type !== "heading-five" &&
+              nodeList[i].type !== "heading-one"
+            ) {
+              if (nodeList[i].type === "paragraph") {
+                subObj["Summary"] = childrenToInlineHtml(nodeList[i].children);
+                i++;
+              } else if (nodeList[i].type === "bulleted-list") {
+                const listKey =
+                  subKey === "In_Scope"
+                    ? "High_Level_Requirements"
+                    : "Exclusions";
+                subObj[listKey] = extractBulletedListItems(nodeList[i]);
+                i++;
+              } else {
+                i++;
+              }
+            }
+            scopeObj[subKey] = subObj;
+          } else {
+            i++;
+          }
+        }
+        result[sectionKey] = scopeObj;
+      } else {
+        // Unknown section — collect until next heading
+        const contentParts: string[] = [];
+        while (
+          i < nodeList.length &&
+          nodeList[i].type !== "heading-five" &&
+          nodeList[i].type !== "heading-one"
+        ) {
+          contentParts.push(childrenToInlineHtml(nodeList[i].children));
+          i++;
+        }
+        result[sectionKey] = contentParts.join("\n");
+      }
+    }
+    // Fallback heading-one (e.g. Section_Citations)
+    else if (node.type === "heading-one") {
+      const key = childrenToText(node.children).replace(/ /g, "_");
+      i++;
+      if (i < nodeList.length && nodeList[i].type === "paragraph") {
+        const text = childrenToText(nodeList[i].children);
+        i++;
+        try {
+          result[key] = JSON.parse(text);
+        } catch {
+          result[key] = text;
+        }
+      }
+    } else {
+      i++;
+    }
+  }
+
+  return {
+    response: "```json\n" + JSON.stringify(result, null, 2) + "\n```",
+  };
 };
