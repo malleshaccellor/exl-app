@@ -1,1211 +1,179 @@
-import React, { useEffect, useRef, useState } from "react";
-import parse, { domToReact, Element } from "html-react-parser";
+import type { Descendant } from "slate";
 import {
-  Box,
-  Table,
-  TableHead,
-  TableBody,
-  TableCell,
-  TableRow,
-  Button,
-  Collapse,
-  Typography,
-} from "@mui/material";
-import { asArray } from "../../utils/brdParser";
-import styles from "./output-generation.module.css";
-import CommentSidebar from "../CommentSidebar";
-import type {
-  repliesType,
-  selectionType,
-  storedCommentsType,
-} from "./ActionLogTable";
-import {
-  addComments,
-  fetchComments,
-} from "../../store/reducer/comments/action";
-import { useAppDispatch, useAppSelector } from "../../store/hooks";
-import FloatingCommentToolbar from "../FloatingCommentToolbar";
-import clsx from "clsx";
-import ProcessMapImage from "./ProcessMapImage";
+  cellToHtml,
+  cellToHtmlArray,
+  nodeToHtml,
+  htmlToCellChildren,
+  htmlArrayToCellChildren,
+} from "./htmlConversion";
 
-type StakeHolder = {
-  Name?: string;
-  Organization?: string;
-  Role?: string;
-  Responsibility?: string;
-};
-
-type ActorPersona = {
-  Type_of_User?: string;
-  Role?: string[] | string;
-  Access_Type?: string[] | string;
-};
-
-type Citation = {
-  source?: string;
-  referred_document?: string;
-  referred_doc_location?: string;
-  section?: string;
-  justification?: string;
-  referred_in?: string;
-  source_timestamp?: string;
-  score?: any;
-};
-
-const isMeaningfulCitation = (c: any) => {
-  if (!c || typeof c !== "object") return false;
-
-  return Boolean(
-    c.source ||
-    c.referred_document ||
-    c.referred_doc_location ||
-    c.section ||
-    c.justification ||
-    c.referred_in ||
-    c.source_timestamp ||
-    c.score,
-  );
-};
-
-const CitationsBlock = ({
-  citations,
-  debugKey,
-}: {
-  citations?: Citation[];
-  debugKey?: string;
-}) => {
-  // ✅ Filter out placeholders like {}, null, "", etc.
-  const items = Array.isArray(citations)
-    ? citations.filter(isMeaningfulCitation)
-    : [];
-
-  const [open, setOpen] = React.useState(false);
-
-  // ✅ Optional debug: helps prove backend is sending empty objects
-  useEffect(() => {
-    if (!debugKey) return;
-    if (!Array.isArray(citations)) return;
-
-    const rawLen = citations.length;
-    const meaningfulLen = items.length;
-
-    if (rawLen !== meaningfulLen) {
-      // eslint-disable-next-line no-console
-      // console.log(
-      //   `[BRD][Citations][${debugKey}] raw=${rawLen}, meaningful=${meaningfulLen}`,
-      //   { raw: citations, meaningful: items },
-      // );
+/**
+ * For a table-cell, return plain text if the cell is a single unformatted paragraph,
+ * or full HTML if it has block-level styles (align/indent/fontSize) or multiple paragraphs.
+ * This keeps the JSON clean for simple cells while preserving all formatting on round-trip.
+ */
+const cellToTextOrHtml = (cell: { children?: Descendant[] }): string => {
+  const children = (cell.children || []) as any[];
+  if (children.length === 1 && children[0].type === "paragraph") {
+    const para = children[0];
+    if (!para.align && !para.indent && !para.fontSize) {
+      // Plain paragraph — return inline-marks-aware text, no <p> wrapper
+      return (para.children || [])
+        .map((leaf: any) => {
+          if (!leaf.text) return "";
+          if (leaf.bold || leaf.italic || leaf.underline || leaf.strikethrough || leaf.code) {
+            return nodeToHtml(leaf);
+          }
+          return leaf.text as string;
+        })
+        .join("");
     }
-  }, [citations, items, debugKey]);
-
-  if (!items.length) return null;
-
-  return (
-    <Box
-      sx={{
-        mt: 1.5,
-        p: 1.5,
-        borderRadius: 1,
-        border: "1px solid rgba(0,0,0,0.08)",
-      }}
-    >
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <Typography sx={{ fontWeight: 700 }}>
-          Citations ({items.length})
-        </Typography>
-
-        <Button size="small" onClick={() => setOpen((v) => !v)}>
-          {open ? "Hide" : "Show"}
-        </Button>
-      </Box>
-
-      <Collapse in={open} timeout="auto" unmountOnExit>
-        <Box sx={{ mt: 1 }}>
-          <ol style={{ margin: 0, paddingLeft: "1.2rem", fontSize: "0.85rem" }}>
-            {items.map((c, idx) => (
-              <li key={idx} style={{ marginBottom: 10 }}>
-                <div>
-                  {c?.source ? ` — ${c.source} ` : ""}
-                  <b>{c?.referred_document ?? "Source document"}</b>
-                  {c?.source_timestamp ? ` (${c.source_timestamp})` : ""}
-                  {c?.score ? ` (score: ${c.score})` : ""}
-                </div>
-
-                {c?.section ? (
-                  <div style={{ opacity: 0.85 }}>Section: {c.section}</div>
-                ) : null}
-                {c?.justification ? (
-                  <div style={{ opacity: 0.85 }}>{c.justification}</div>
-                ) : null}
-                {c?.referred_in ? (
-                  <div style={{ opacity: 0.85 }}>{c.referred_in}</div>
-                ) : null}
-
-                {/* {c?.referred_doc_location ? (
-                  <a
-                    href={c.referred_doc_location}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: "inline-block", marginTop: 4 }}
-                  >
-                    Open referred document
-                  </a>
-                ) : null} */}
-              </li>
-            ))}
-          </ol>
-        </Box>
-      </Collapse>
-    </Box>
-  );
+  }
+  // Multiple paragraphs or has block formatting — emit full HTML
+  return cellToHtml(cell);
 };
 
-const Section = ({ title, children, citations, citationsDebugKey }) => (
-  <Box sx={{ mb: 3 }} className={styles.sectionRow}>
-    <h5>
-      {/* Changed div to span to avoid hydration mismatch */}
-      <span dangerouslySetInnerHTML={{ __html: title }} />
-    </h5>
-    {children}
-    <CitationsBlock citations={citations} debugKey={citationsDebugKey} />
-  </Box>
-);
-
-const Bullets = ({ items }: { items: any }) => {
-  const arr = asArray(items);
-  if (!arr.length) return null;
-
-  return (
-    <Box component="ul" sx={{ pl: 3, mt: 1, mb: 2 }}>
-      {arr.map((t, i) => (
-        <li key={i}>
-          {/* ✅ If caller passes JSX (like renderText -> <mark/>), render it directly */}
-          {React.isValidElement(t) ? (
-            t
-          ) : (
-            // <p>{String(t ?? "")}</p>
-            <p>
-              {
-                <span
-                  dangerouslySetInnerHTML={{
-                    __html: String(t ?? ""),
-                  }}
-                />
-              }
-            </p>
-          )}
-        </li>
-      ))}
-    </Box>
-  );
-};
-const HtmlBullets = ({ items }: { items: any }) => {
-  const arr = asArray(items);
-  if (!arr.length) return null;
-
-  return (
-    <Box component="ul" sx={{ pl: 3, mt: 1, mb: 2 }}>
-      {arr.map((t, i) => (
-        <li key={i}>
-          <span dangerouslySetInnerHTML={{ __html: String(t ?? "") }} />
-        </li>
-      ))}
-    </Box>
-  );
-};
-const SimpleTable = ({
-  columns,
-  rows,
-}: {
-  columns: { key: string; label: string; width?: string }[];
-  rows: any[];
-}) => {
-  if (!Array.isArray(rows) || rows.length === 0) return null;
-
-  return (
-    <div className={styles.tableContainer}>
-      <Table>
-        <TableHead>
-          <TableRow>
-            {columns.map((c) => (
-              <TableCell key={c.key} sx={{ width: c.width }}>
-                {c.label}
-              </TableCell>
-            ))}
-          </TableRow>
-        </TableHead>
-
-        <TableBody>
-          {rows.map((r, idx) => (
-            <TableRow key={idx}>
-              {columns.map((c) => {
-                const val = r?.[c.key];
-
-                // ✅ When showComments=true, you pass React nodes here (div/mark/array)
-                if (React.isValidElement(val) || Array.isArray(val)) {
-                  return <TableCell key={c.key}>{val}</TableCell>;
-                }
-
-                // ✅ Otherwise treat as HTML string (keeps your existing behavior)
-                return (
-                  <TableCell
-                    key={c.key}
-                    dangerouslySetInnerHTML={{
-                      __html: String(val ?? "-"),
-                    }}
-                  />
-                );
-              })}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
-  );
-};
-// const SimpleTable = ({
-//   columns,
-//   rows,
-// }: {
-//   columns: { key: string; label: string; width?: string }[];
-//   rows: any[];
-// }) => {
-//   if (!Array.isArray(rows) || rows.length === 0) return null;
-
-//   return (
-//     <div className={styles.tableContainer}>
-//       <Table>
-//         <TableHead>
-//           <TableRow>
-//             {columns.map((c) => (
-//               <TableCell key={c.key} sx={{ width: c.width }}>
-//                 {c.label}
-//               </TableCell>
-//             ))}
-//           </TableRow>
-//         </TableHead>
-
-//         <TableBody>
-//           {rows.map((r, idx) => (
-//             <TableRow key={idx}>
-//               {columns.map((c) => (
-//                 <TableCell
-//                   key={c.key}
-//                   dangerouslySetInnerHTML={{ __html: r?.[c.key] ?? "-" }}
-//                 />
-//               ))}
-//             </TableRow>
-//           ))}
-//         </TableBody>
-//       </Table>
-//     </div>
-//   );
-// };
-
-type brdViewType = {
-  brdMarkdown: any;
-  userStoryRes?: any;
-  processMapXML?: any;
-  showComments?: boolean;
-  isEditing?: boolean;
-  onCommentsWindowClose?: () => void;
-  onCellChange?: (rowIndex: number, colKey: string, value: string) => void;
-  artifactJobID?: string;
-  activeTab?: string | number;
-  bottomElements?: React.ReactNode;
-  onImageExported?: (data: any) => void;
-  onAdditionalbrddataload?: (data: any) => void;
-};
-
-export const BRdView = ({
-  brdMarkdown,
-  userStoryRes,
-  processMapXML,
-  activeTab,
-  showComments,
-  onCommentsWindowClose,
-  artifactJobID,
-  bottomElements,
-  onImageExported,
-  onAdditionalbrddataload,
-}: brdViewType) => {
-  console.log(brdMarkdown, "brdMarkdown");
-  const dispatch = useAppDispatch();
-  const [selection, setSelection] = useState<selectionType | null>(null);
-  const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
-    [],
-  );
-  const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
-  const [renderKey, setRenderKey] = useState(0);
-
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const activeSpanRef = useRef<HTMLSpanElement | null>(null);
-
-  const getCommentsData = useAppSelector((state) => state.comments.comments);
-  const uploadCommentData = useAppSelector(
-    (state) => state.comments.addComment,
-  );
-
-  useEffect(() => {
-    if (artifactJobID) {
-      dispatch(fetchComments(artifactJobID));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uploadCommentData?.data]);
-
-  useEffect(() => {
-    if (getCommentsData?.jobId !== artifactJobID) {
-      setStoredComments([]);
-      return;
-    }
-    const existingComments = getCommentsData?.data.map((com: any) => ({
-      id: com.id,
-      position: {
-        left: com.position.left,
-        top: com.position.top,
-      },
-      rowIndex: com.rowIndex,
-      colField: com.colField,
-      text: com.text,
-      comment: com.comment,
-      time: com.createdAt,
-      userId: com.useId,
-      isResolved: com.isResolved,
-      replies: com.replies.map((reply: repliesType) => ({
-        id: reply?.id,
-        text: reply?.text,
-        createdAt: reply?.createdAt,
-        useId: reply?.useId,
-      })),
-    }));
-    setStoredComments(existingComments);
-  }, [getCommentsData, artifactJobID]);
-
-  const clearActiveSpan = () => {
-    if (activeSpanRef.current) {
-      const span = activeSpanRef.current;
-      span.replaceWith(document.createTextNode(span.textContent || ""));
-      activeSpanRef.current = null;
-    }
-    setSelection(null);
-  };
-
-  const handleMouseUp = (rowIndex?: any, colField?: any) => {
-    if (!showComments) return;
-    const selectionObj = window.getSelection();
-    if (!selectionObj || selectionObj.rangeCount === 0) return;
-
-    const range = selectionObj.getRangeAt(0);
-    const selectedText = range.toString();
-
-    if (!selectedText.trim()) return;
-
-    clearActiveSpan();
-
-    const span = document.createElement("span");
-    span.className = styles.commentSelection;
-    span.textContent = selectedText;
-
-    range.deleteContents();
-    range.insertNode(span);
-    activeSpanRef.current = span;
-
-    const rect = range?.getBoundingClientRect();
-    const OFFSET = 8;
-
-    setSelection({
-      rowIndex,
-      colField,
-      text: selectedText,
-      position: {
-        left: rect.right + window.scrollX + OFFSET,
-        top: rect.top + rect.height / 2 + window.scrollY,
-      },
-    });
-
-    selectionObj.removeAllRanges();
-  };
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        clearActiveSpan();
+/**
+ * Same logic for array fields (AcceptanceCriteria):
+ * each paragraph item becomes plain text or HTML depending on formatting.
+ */
+const cellToTextOrHtmlArray = (cell: { children?: Descendant[] }): string[] => {
+  const children = (cell.children || []) as any[];
+  return children
+    .map((child: any) => {
+      if (child.type === "paragraph" && !child.align && !child.indent && !child.fontSize) {
+        return (child.children || [])
+          .map((leaf: any) => {
+            if (!leaf.text) return "";
+            if (leaf.bold || leaf.italic || leaf.underline || leaf.strikethrough || leaf.code) {
+              return nodeToHtml(leaf);
+            }
+            return leaf.text as string;
+          })
+          .join("");
       }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+      // Formatted paragraph — emit full HTML
+      return nodeToHtml(child);
+    })
+    .filter((t: string) => t.trim().length > 0);
+};
 
-  useEffect(() => {
-    if (!selection) return;
+export const VISIBLE_COLUMNS = [
+  { key: "req_id", label: "Req No." },
+  { key: "userstory_id", label: "User Story No." },
+  { key: "Story", label: "User Story Description" },
+  { key: "AcceptanceCriteria", label: "Acceptance Criteria" },
+  { key: "RequirementType", label: "Requirement Type" },
+];
 
-    const handleMouseDown = (e: MouseEvent) => {
-      const toolbar = document.getElementById("floating-toolbar");
-      if (!toolbar) return;
-      if (!toolbar.contains(e.target as Node)) {
-        clearActiveSpan();
-      }
-    };
+export const HIDDEN_STORY_KEYS = [
+  "source",
+  "referred_document",
+  "referred_doc_location",
+  "section",
+  "justification",
+  "referred_in",
+  "source_timestamp",
+];
 
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [selection]);
+export const jsonToSlateValue = (data: Record<string, any>): Descendant[] => {
+  const allRows: any[] = [];
 
-  const usersDetails = useAppSelector((state) => state.users.userDetails);
-
-  const sendComment = (text: string) => {
-    if (!selection || !activeSpanRef.current) return;
-    window.getSelection()?.removeAllRanges();
-    const span = activeSpanRef.current;
-    if (span && span.parentNode) {
-      const parent = span.parentNode;
-      while (span.firstChild) {
-        parent.insertBefore(span.firstChild, span);
-      }
-      parent.removeChild(span);
-    }
-
-    const comment: storedCommentsType = {
-      position: selection.position,
-      rowIndex: selection.rowIndex,
-      text: selection.text,
-      colField: selection.colField,
-      comment: text,
-      time: new Date().toISOString(),
-    };
-
-    // setStoredComments((prev) => [...prev, comment]);
-
-    const addCommentPayload = {
-      commentType: "comment",
-      commentId: "",
-      jobId: artifactJobID || "",
-      createdById: usersDetails && usersDetails.id,
-      userType: "",
-      comment: text,
-      rowIndex: selection.rowIndex,
-      colField: selection.colField,
-      text: selection.text,
-      position: {
-        left: selection.position.left,
-        top: selection.position.top,
-      },
-    };
-    dispatch(addComments(addCommentPayload));
-    setRenderKey((prev) => prev + 1);
-
-    activeSpanRef.current = null;
-    setSelection(null);
-  };
-  let highlightPointers: Record<string, number> = {};
-
-  const highlightText = (
-    nodeText: string,
-    highlights: storedCommentsType[],
-    activeId?: string,
-  ) => {
-    if (!highlights || !highlights.length || !nodeText) return nodeText;
-
-    const result: (string | React.JSX.Element)[] = [];
-    let remainingNodeText = nodeText;
-
-    // We iterate through all active highlights for this cell
-    highlights.forEach((h) => {
-      const hText = h.text;
-      const hId = h.id;
-
-      // Initialize pointer for this specific highlight if it doesn't exist
-      if (highlightPointers[hId] === undefined) highlightPointers[hId] = 0;
-
-      const currentPointer = highlightPointers[hId];
-      const remainingH = hText.slice(currentPointer);
-
-      if (remainingH.length === 0) return;
-
-      const isActive = hId === activeId;
-      const className = isActive
-        ? styles.commentHighlightActive
-        : styles.commentHighlight;
-
-      // 1. Check if the NEXT part of our highlight exists in this node
-      // We look for the longest possible match from the start of the remaining highlight
-      let matchIdx = -1;
-      let matchLength = 0;
-
-      for (let i = remainingH.length; i > 0; i--) {
-        const fragment = remainingH.slice(0, i);
-        const foundIdx = remainingNodeText.indexOf(fragment);
-
-        if (foundIdx !== -1) {
-          matchIdx = foundIdx;
-          matchLength = i;
-          break;
-        }
+  for (const [reqName, reqData] of Object.entries(data)) {
+    for (const story of reqData.UserStories || []) {
+      const hiddenData: Record<string, string> = {
+        Requirement: reqName,
+        RequirementDescription: reqData.RequirementDescription,
+      };
+      for (const key of HIDDEN_STORY_KEYS) {
+        hiddenData[key] = story[key] != null ? String(story[key]) : "";
       }
 
-      // 2. If we found a piece of the highlight in this node
-      if (matchIdx !== -1) {
-        // Add text before the match
-        if (matchIdx > 0) {
-          result.push(remainingNodeText.slice(0, matchIdx));
-        }
+      allRows.push({
+        type: "table-row",
+        hiddenData,
+        children: VISIBLE_COLUMNS.map(({ key }) => {
+          let val: any;
+          if (key === "req_id") val = reqData.req_id;
+          else val = story[key];
 
-        // Add the highlighted mark
-        result.push(
-          <mark
-            key={`${hId}-${matchIdx}`}
-            className={className}
-            id={isActive ? `comment-${hId}` : undefined}
-          >
-            {remainingNodeText.slice(matchIdx, matchIdx + matchLength)}
-          </mark>,
-        );
-
-        // Advance the global pointer so the next node knows where to start
-        highlightPointers[hId] += matchLength;
-
-        // Update remaining text in this node to process further highlights or plain text
-        remainingNodeText = remainingNodeText.slice(matchIdx + matchLength);
-      }
-    });
-
-    // 3. If no matches were found or there is leftover text in the node
-    if (result.length === 0) return nodeText;
-    if (remainingNodeText) result.push(remainingNodeText);
-
-    return result;
-  };
-
-  if (!brdMarkdown) return null;
-
-  const parseMaybeJson = (input: unknown): any | null => {
-    if (input && typeof input === "object") return input;
-    if (typeof input !== "string") return null;
-
-    let text = input.trim();
-    text = text.replace(/^```(?:json)?\s*/i, "");
-    text = text.replace(/```$/i, "");
-    text = text.replace(/\n\s*\.\.\.\s*$/g, "");
-
-    const firstBrace = text.indexOf("{");
-    const lastBrace = text.lastIndexOf("}");
-    if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
-      return null;
+          if (Array.isArray(val)) {
+            return {
+              type: "table-cell",
+              // Each HTML string in the array → proper Slate nodes with styles restored
+              children: htmlArrayToCellChildren(val),
+            };
+          }
+          return {
+            type: "table-cell",
+            // HTML string → Slate nodes with align/indent/fontSize restored
+            children: htmlToCellChildren(val != null ? String(val) : ""),
+          };
+        }),
+      });
     }
+  }
 
-    text = text.slice(firstBrace, lastBrace + 1).trim();
-
-    try {
-      return JSON.parse(text);
-    } catch {
-      return null;
-    }
+  const headerRow = {
+    type: "table-row" as const,
+    children: VISIBLE_COLUMNS.map(({ label }) => ({
+      type: "table-cell" as const,
+      isHeader: true,
+      children: [
+        { type: "paragraph" as const, children: [{ text: label }] },
+      ],
+    })),
   };
 
-  const pick = (obj: any, keys: string[]) => {
-    for (const k of keys) {
-      const v = obj?.[k];
-      if (v !== undefined && v !== null) return v;
-    }
-    return undefined;
-  };
-
-  const toArray = (v: any) => (Array.isArray(v) ? v : v ? [v] : []);
-
-  const brd: any = parseMaybeJson(brdMarkdown) ?? {};
-  const exec = pick(brd, ["Executive_Summary", "ExecutiveSummary"]) ?? {};
-  const scope =
-    pick(brd, [
-      "Process_Scope_Summary",
-      "Process_Scope_summary",
-      "ProcessScopeSummary",
-    ]) ?? {};
-
-  const stakeHolders = toArray(
-    pick(brd, [
-      "Stakeholders_and_Key_Personnel",
-      "Stakeholders_and_key_Personnel",
-      "Stakeholders",
-    ]),
-  );
-
-  const goals = toArray(
-    pick(brd, ["Goals_and_Objectives", "Goals", "Objectives"]),
-  );
-
-  const glossaryRaw = toArray(
-    pick(brd, ["Glossary", "Glossary_Terms", "Terms"]),
-  );
-  const glossary = glossaryRaw.filter(Boolean).map((g: any) => ({
-    Term: g?.Term ?? g?.term ?? "-",
-    Definition: g?.Definition ?? g?.definition ?? "-",
-  }));
-
-  const actors = toArray(
-    pick(brd, ["Actors_Personas", "Actors_personas", "Actors", "Personas"]),
-  );
-
-  const sectionCitations =
-    pick(brd, ["Section_Citations", "SectionCitations", "section_citations"]) ??
-    {};
-
-  const getCitations = (pathKeys: string[], debugKey?: string) => {
-    let node: any = sectionCitations;
-    for (const k of pathKeys) node = node?.[k];
-    const arr = (toArray(node) as Citation[]).filter(Boolean);
-
-    // optional: quick visibility into backend payload
-    if (debugKey && Array.isArray(arr)) {
-      // eslint-disable-next-line no-console
-      // console.log(`[BRD][getCitations][${debugKey}]`, arr);
-    }
-    return arr;
-  };
-
-  const renderText = (value: any, rowIndex?: number, colField?: string) => {
-    const textValue = String(value ?? "");
-    highlightPointers = {};
-
-    const cellHighlights = storedComments?.filter((c) => {
-      if (rowIndex !== undefined && colField !== undefined) {
-        return c.rowIndex === rowIndex && c.colField === colField;
-      }
-      return false;
-    });
-
-    const options = {
-      replace: (domNode) => {
-        // 1. If it's a plain text node, use your function
-        if (domNode.type === "text" && domNode.data) {
-          return (
-            <>{highlightText(domNode.data, cellHighlights, activeCommentId)}</>
-          );
-        }
-
-        // 2. If it's an element node (like <b>, <i>, etc.)
-        // We check if it has children and apply the same logic to them
-        if (domNode instanceof Element && domNode.children) {
-          // This ensures bold/italic tags still exist, but their
-          // internal text gets passed to highlightText
-          return undefined; // Returning undefined tells the parser to continue parsing children normally
-        }
-      },
-    };
-
-    return parse(textValue, options);
-  };
-
-  const processedStakeholders = stakeHolders.map((row, idx) => ({
-    ...row,
-    Name: (
-      <div onMouseUp={() => handleMouseUp(idx, "Name")}>
-        {renderText(row.Name, idx, "Name")}
-        {/* {
-          <div
-            dangerouslySetInnerHTML={{
-              __html: String(row.Name, idx, "Name"),
-            }}
-          />
-        } */}
-      </div>
-    ),
-    Organization: (
-      <div onMouseUp={() => handleMouseUp(idx, "Organization")}>
-        {renderText(row.Organization, idx, "Organization")}
-        {/* {
-          <div
-            dangerouslySetInnerHTML={{
-              __html: String(row.Organization, idx, "Organization"),
-            }}
-          />
-        } */}
-      </div>
-    ),
-    Role: (
-      <div onMouseUp={() => handleMouseUp(idx, "Role")}>
-        {renderText(row.Role, idx, "Role")}
-        {/* {
-          <div
-            dangerouslySetInnerHTML={{
-              __html: String(row.Role, idx, "Role"),
-            }}
-          />
-        } */}
-      </div>
-    ),
-    Responsibility: (
-      <div onMouseUp={() => handleMouseUp(idx, "Responsibility")}>
-        {renderText(row.Responsibility, idx, "Responsibility")}
-        {/* {
-          <div
-            dangerouslySetInnerHTML={{
-              __html: String(row.Responsibility, idx, "Responsibility"),
-            }}
-          />
-        } */}
-      </div>
-    ),
-  }));
-
-  const inScopeItems = asArray(
-    pick(scope, ["In_Scope", "InScope"])?.High_Level_Requirements ??
-      pick(scope, ["In_Scope", "InScope"]) ??
-      pick(scope, ["High_Level_Requirements", "HighLevelRequirements"]),
-  );
-
-  const outOfScopeItems = asArray(
-    pick(scope, ["Out_of_Scope", "OutOfScope"])?.Exclusions ??
-      pick(scope, ["Out_of_Scope", "OutOfScope"]) ??
-      pick(scope, ["Exclusions"]),
-  );
-
-  const processedGlossary = glossary.map((item, idx) => ({
-    ...item,
-    Term: (
-      <div onMouseUp={() => handleMouseUp(idx, "Glossary_Term")}>
-        {renderText(item.Term, idx, "Glossary_Term")}
-        {/* {
-          <div
-            dangerouslySetInnerHTML={{
-              __html: String(item.Term, idx, "Glossary_Term"),
-            }}
-          />
-        } */}
-      </div>
-    ),
-    Definition: (
-      <div onMouseUp={() => handleMouseUp(idx, "Glossary_Definition")}>
-        {renderText(item.Definition, idx, "Glossary_Definition")}
-        {/* {
-          <div
-            dangerouslySetInnerHTML={{
-              __html: String(item.Definition, idx, "Glossary_Definition"),
-            }}
-          />
-        } */}
-      </div>
-    ),
-  }));
-  // Requirement type----------------------------
-  const normalizeReqtype = (t: any) => {
-    const s = String(t ?? "").trim();
-    return s || "Unspecified";
-  };
-
-  const pickReqTypeFromStories = (stories: any[]) => {
-    if (!Array.isArray(stories)) return "Unspecified";
-    const found = stories.find((s) => s?.RequirementType);
-    return normalizeReqtype(found?.RequirementType);
-  };
-
-  const buildrequirementRowsFromUS = (input: any) => {
-    const obj = parseMaybeJson(input);
-    if (!obj || typeof obj !== "object" || Array.isArray(obj)) return [];
-
-    return Object.entries(obj)
-      .map(([reqName, value]: [string, any]) => {
-        const reqNo = value?.req_id ?? "-";
-        const reqDesc = value?.RequirementDescription ?? "-";
-        const reqType = pickReqTypeFromStories(value?.UserStories);
-
-        return {
-          ReqNo: reqNo,
-          RequirementName: reqName,
-          RequirementDescription: reqDesc,
-          RequirementType: reqType,
-        };
-      })
-      .filter((r) => r.RequirementName && r.RequirementName !== "-");
-  };
-  const requirementRows = buildrequirementRowsFromUS(userStoryRes);
-
-  const reqGroups = requirementRows.reduce(
-    (acc: Record<string, any[]>, row) => {
-      const key = row.RequirementType || "Unspecified";
-      (acc[key] ||= []).push(row);
-      return acc;
+  return [
+    {
+      type: "table",
+      className: "editor-custom-table",
+      children: [headerRow, ...allRows],
     },
-    {},
-  );
-  const order = [
-    "Functional",
-    "Non-Functional",
-    "Migration",
-    "Integration",
-    "Dashboarding and Reporting",
-    "Solution Backlog",
-    "Unspecified",
   ];
-  // const reqGroupEntries = Object.entries(reqGroups).sort(([a], [b]) =>
-  // a.localeCompare(b)
-  // )
-  const reqGroupEntries = Object.entries(reqGroups).sort(([a], [b]) => {
-    const ai = order.indexOf(a);
-    const bi = order.indexOf(b);
+};
 
-    const aRank = ai === -1 ? Number.MAX_SAFE_INTEGER : ai;
-    const bRank = bi === -1 ? Number.MAX_SAFE_INTEGER : bi;
+export const slateValueToJson = (nodes: Descendant[]): Record<string, any> => {
+  const tableNode = (nodes as any[]).find((n: any) => n.type === "table");
+  if (!tableNode) return {};
 
-    if (aRank === bRank) return a.localeCompare(b);
-    return aRank - bRank;
-  });
+  const rows = tableNode.children;
+  const dataRows = rows.slice(1);
 
-  useEffect(() => {
-    if (reqGroupEntries) {
-      onAdditionalbrddataload(reqGroupEntries);
+  const result: Record<string, any> = {};
+
+  for (const row of dataRows) {
+    const cells = row.children;
+    const hidden = row.hiddenData || {};
+
+    // Use smart helper: plain text for unformatted cells, HTML when formatting is present
+    const reqId = cellToTextOrHtml(cells[0]);
+    const reqName = hidden.Requirement || "";
+    const reqDesc = hidden.RequirementDescription || "";
+
+    if (!result[reqName]) {
+      result[reqName] = {
+        req_id: reqId,
+        RequirementDescription: reqDesc,
+        UserStories: [],
+      };
     }
-  }, [reqGroupEntries.length]);
-  return (
-    <>
-      <div
-        className={clsx(
-          styles.contentContainer,
-          showComments && styles.commentsContainer,
-        )}
-        ref={containerRef}
-      >
-        <div
-          style={{
-            minHeight: "60vh",
-            maxHeight: "calc(100vh - 250px)",
-            overflow: "auto",
-          }}
-        >
-          <Section
-            title="Executive Summary"
-            citations={getCitations(["Executive_Summary"])}
-            citationsDebugKey="Executive_Summary"
-          >
-            {showComments
-              ? Object.entries(exec ?? {}).map(([k, v], idx) => (
-                  <Box
-                    key={`${k}-${renderKey}`}
-                    sx={{ mb: 1.5 }}
-                    onMouseUp={() => handleMouseUp(idx, k)}
-                  >
-                    <h5>{String(k).replaceAll("_", " ")}</h5>
-                    {Array.isArray(v) ? (
-                      <Bullets
-                        items={v.map((item) => renderText(item, idx, k))}
-                      />
-                    ) : (
-                      <p>
-                        {
-                          <div className="content-wrapper">
-                            {renderText(v, idx, k)}
-                          </div>
-                        }
-                      </p>
-                    )}
-                  </Box>
-                ))
-              : Object.entries(exec ?? {}).map(([k, v]) => (
-                  <Box key={k} sx={{ mb: 1.5 }}>
-                    <h5>{String(k).replaceAll("_", " ")}</h5>
-                    {Array.isArray(v) ? (
-                      <Bullets items={v} />
-                    ) : (
-                      <p>
-                        {
-                          <span
-                            dangerouslySetInnerHTML={{
-                              __html: String(v ?? ""),
-                            }}
-                          />
-                        }
-                      </p>
-                    )}
-                  </Box>
-                ))}
-          </Section>
 
-          <Section
-            title="Stakeholders & Key Personal"
-            citations={getCitations(["Stakeholders_and_Key_Personnel"])}
-            citationsDebugKey="Stakeholders_and_Key_Personnel"
-          >
-            <SimpleTable
-              key={renderKey}
-              columns={[
-                { key: "Name", label: "Name", width: "20%" },
-                { key: "Organization", label: "Organization", width: "20%" },
-                { key: "Role", label: "Role", width: "20%" },
-                {
-                  key: "Responsibility",
-                  label: "Responsibility",
-                  width: "20%",
-                },
-              ]}
-              rows={showComments ? processedStakeholders : stakeHolders}
-            />
-          </Section>
+    const story: Record<string, any> = {
+      userstory_id: cellToTextOrHtml(cells[1]),
+      Story: cellToTextOrHtml(cells[2]),
+      // AcceptanceCriteria is always an array — each paragraph item → text or HTML
+      AcceptanceCriteria: cellToTextOrHtmlArray(cells[3]),
+      RequirementType: cellToTextOrHtml(cells[4]),
+    };
 
-          <Section title="Process Scope Summary">
-            <h5>In Scope</h5>
-            {showComments ? (
-              <ul key={renderKey}>
-                {inScopeItems.map((item, idx) => (
-                  <li key={idx} onMouseUp={() => handleMouseUp(idx, "InScope")}>
-                    {renderText(item, idx, "InScope")}
-                    {/* {
-                      <div
-                        dangerouslySetInnerHTML={{
-                          __html: String(item, idx, "InScope"),
-                        }}
-                      />
-                    } */}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <Bullets items={inScopeItems} />
-            )}
+    for (const key of HIDDEN_STORY_KEYS) {
+      story[key] = hidden[key] || "";
+    }
 
-            <CitationsBlock
-              citations={getCitations(["Process_Scope_Summary", "In_Scope"])}
-              debugKey="Process_Scope_Summary.In_Scope"
-            />
+    result[reqName].UserStories.push(story);
+  }
 
-            <h5>Out of Scope</h5>
-            {showComments ? (
-              <ul key={renderKey}>
-                {outOfScopeItems.map((item, idx) => (
-                  <li
-                    key={idx}
-                    onMouseUp={() => handleMouseUp(idx, "OutOfScope")}
-                  >
-                    {renderText(item, idx, "OutOfScope")}
-                    {/* {
-                      <div
-                        dangerouslySetInnerHTML={{
-                          __html: String(item, idx, "OutOfScope"),
-                        }}
-                      />
-                    } */}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <Bullets items={outOfScopeItems} />
-            )}
-
-            <CitationsBlock
-              citations={getCitations([
-                "Process_Scope_Summary",
-                "Out_of_Scope",
-              ])}
-              debugKey="Process_Scope_Summary.Out_of_Scope"
-            />
-          </Section>
-
-          <Section
-            title="Goals & objectives"
-            citations={getCitations(["Goals_and_Objectives"])}
-            citationsDebugKey="Goals_and_Objectives"
-          >
-            {showComments ? (
-              <ul className={styles.bulletList} key={renderKey}>
-                {goals.map((goal, idx) => (
-                  <li
-                    key={idx}
-                    onMouseUp={() => handleMouseUp(idx, "Goals")}
-                    style={{ marginBottom: "8px" }}
-                  >
-                    {renderText(goal, idx, "Goals")}
-                    {/* {
-                      <div
-                        dangerouslySetInnerHTML={{
-                          __html: String(goal, idx, "Goals"),
-                        }}
-                      />
-                    } */}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <Bullets items={goals} />
-            )}
-          </Section>
-
-          <Section
-            title="Glossary"
-            citations={getCitations(["Glossary"])}
-            citationsDebugKey="Glossary"
-          >
-            <SimpleTable
-              key={renderKey}
-              columns={[
-                { key: "Term", label: "Term", width: "30%" },
-                { key: "Definition", label: "Definition", width: "70%" },
-              ]}
-              rows={showComments ? processedGlossary : glossary}
-            />
-          </Section>
-
-          <Section
-            title="Actors/Personas"
-            citations={getCitations(["Actors_Personas"])}
-            citationsDebugKey="Actors_Personas"
-          >
-            {actors.length === 0 ? null : (
-              <div className={styles.tableContainer}>
-                <Table>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Type of User</TableCell>
-                      <TableCell>Role</TableCell>
-                      <TableCell>Access Type</TableCell>
-                    </TableRow>
-                  </TableHead>
-
-                  {showComments ? (
-                    <TableBody>
-                      {actors.map((a: any, i: number) => (
-                        <TableRow key={`${i}-${renderKey}`}>
-                          <TableCell
-                            onMouseUp={() => handleMouseUp(i, "Type_of_User")}
-                          >
-                            {renderText(
-                              a?.Type_of_User ?? a?.TypeOfUser ?? "-",
-                              i,
-                              "Type_of_User",
-                            )}
-                          </TableCell>
-
-                          <TableCell
-                            onMouseUp={() => handleMouseUp(i, "Actor_Role")}
-                          >
-                            <ul style={{ paddingLeft: "1.2rem", margin: 0 }}>
-                              {asArray(a?.Role).map(
-                                (role: string, roleIdx: number) => (
-                                  <li key={roleIdx}>
-                                    {/* Changed from Actor_Role_${roleIdx} to Actor_Role */}
-                                    {renderText(role, i, "Actor_Role")}
-                                  </li>
-                                ),
-                              )}
-                            </ul>
-                          </TableCell>
-
-                          <TableCell
-                            onMouseUp={() => handleMouseUp(i, "Access_Type")}
-                          >
-                            {asArray(a?.Access_Type ?? a?.AccessType).map(
-                              (type, typeIdx) => (
-                                <span key={typeIdx}>
-                                  {renderText(type, i, "Access_Type")}
-                                  {typeIdx < asArray(a?.Access_Type).length - 1
-                                    ? ", "
-                                    : ""}
-                                </span>
-                              ),
-                            ) || "-"}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  ) : (
-                    <TableBody>
-                      {actors.map((a: any, i: number) => (
-                        <TableRow key={i}>
-                          <TableCell>
-                            <span
-                              dangerouslySetInnerHTML={{
-                                __html: a?.Type_of_User ?? a?.TypeOfUser ?? "-",
-                              }}
-                            />
-                          </TableCell>
-                          <TableCell>
-                            {/* 
-                  Note: If 'Bullets' is your component, you must go inside 
-                  Bullets.tsx and apply dangerouslySetInnerHTML to its <li> tags.
-                */}
-                            {/* <Bullets items={a?.Role} /> */}
-                            <HtmlBullets items={a?.Role} />
-                          </TableCell>
-                          <TableCell>
-                            <span
-                              dangerouslySetInnerHTML={{
-                                __html:
-                                  asArray(a?.Access_Type ?? a?.AccessType).join(
-                                    ", ",
-                                  ) || "-",
-                              }}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  )}
-                </Table>
-              </div>
-            )}
-          </Section>
-          <Section title="Process Map">
-            <ProcessMapImage
-              xml={processMapXML}
-              onImageExported={onImageExported}
-            />
-          </Section>
-
-          {reqGroupEntries.length === 0 ? null : (
-            <Section title="Requirements">
-              {reqGroupEntries.map(([typeName, rows], idx) => (
-                <Box key={typeName} sx={{ mb: 2 }}>
-                  <h5>
-                    {idx + 1}. {typeName} Requirement
-                  </h5>
-                  <SimpleTable
-                    columns={[
-                      { key: "ReqNo", label: "Req No", width: "15%" },
-                      {
-                        key: "RequirementName",
-                        label: "requirement Name",
-                        width: "30%",
-                      },
-                      {
-                        key: "RequirementDescription",
-                        label: "Requirement Description",
-                        width: "55%",
-                      },
-                    ]}
-                    rows={rows}
-                  />
-                </Box>
-              ))}
-            </Section>
-          )}
-
-          {bottomElements && bottomElements}
-        </div>
-
-        {showComments && activeTab === "brd" && (
-          <CommentSidebar
-            comments={storedComments}
-            setComments={setStoredComments}
-            onCommentsWindowClose={onCommentsWindowClose}
-            artifactJobID={artifactJobID}
-            activeCommentId={activeCommentId}
-            setActiveCommentId={setActiveCommentId}
-          />
-        )}
-      </div>
-
-      {selection && (
-        <FloatingCommentToolbar
-          position={selection.position}
-          onAddComment={(text) => {
-            if (!selection) return;
-            sendComment(text);
-          }}
-        />
-      )}
-    </>
-  );
+  return result;
 };
