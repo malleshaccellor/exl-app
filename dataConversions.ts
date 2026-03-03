@@ -622,154 +622,147 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
   return transformBRDDataToSlate(parsed);
 };
 
-/** Serialize a block node's content as inline HTML, preserving block-level
- *  styles (fontSize, align, indent) as a wrapping element with style attr. */
-const blockToStyledHtml = (node: any): string => {
-  const content = childrenToInlineHtml(node.children);
-  const styleProps: string[] = [];
-  if (node.align && node.align !== "left")
-    styleProps.push(`text-align:${node.align}`);
-  if (node.indent)
-    styleProps.push(`padding-left:${node.indent * 24}px`);
-  if (node.fontSize)
-    styleProps.push(`font-size:${node.fontSize}px`);
-  if (styleProps.length === 0) return content;
-  return `<div style="${styleProps.join(";")}">${content}</div>`;
-};
-
-/** Extract bulleted list items preserving block-level styles */
-const extractStyledBulletedListItems = (listNode: any): string[] => {
-  return (listNode.children || []).map((item: any) =>
-    blockToStyledHtml(item),
-  );
-};
-
 export const slateToBrdJson = (nodes: Descendant[]): any => {
   const result: Record<string, any> = {};
   const nodeList = nodes as any[];
-
   let i = 0;
+
+  // List of all top-level section keys to prevent one section from "eating" another
+  const TOP_LEVEL_SECTIONS = [
+    "Executive_Summary",
+    "Stakeholders_and_Key_Personnel",
+    "Actors_Personas",
+    "Glossary",
+    "Goals_and_Objectives",
+    "Process_Scope_Summary"
+  ];
+
+  // Helper to safely call external functions like extractTableAsArray
+  const safeCall = (fn: any, arg: any, fallback: any = []) => {
+    try {
+      if (typeof fn !== "function") return fallback;
+      return fn(arg);
+    } catch (err) {
+      console.error(`Parser Error:`, err);
+      return fallback;
+    }
+  };
+
   while (i < nodeList.length) {
     const node = nodeList[i];
 
-    // Top-level section: heading-five
     if (node.type === "heading-five") {
-      const sectionName = childrenToText(node.children);
-      const sectionKey = displayNameToKey(sectionName);
+      const sectionKey = displayNameToKey(childrenToText(node.children));
       i++;
 
+      /** 1. EXECUTIVE SUMMARY (Nested sub-headings) **/
       if (sectionKey === "Executive_Summary") {
         const execSummary: Record<string, string> = {};
-        while (
-          i < nodeList.length &&
-          nodeList[i].type !== "heading-five" &&
-          nodeList[i].type !== "heading-one"
-        ) {
-          if (nodeList[i].type === "heading-six") {
-            const subKey = childrenToText(nodeList[i].children).replace(
-              / /g,
-              "_",
-            );
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
+          const currKey = displayNameToKey(childrenToText(curr.children));
+
+          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+
+          if (curr.type === "heading-five") {
+            const subKey = childrenToText(curr.children).replace(/ /g, "_");
             i++;
-            if (i < nodeList.length && nodeList[i].type === "paragraph") {
-              execSummary[subKey] = blockToStyledHtml(nodeList[i]);
+            let content = "";
+            while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
+              content += childrenToInlineHtml(nodeList[i].children);
               i++;
             }
-          } else {
-            i++;
-          }
+            execSummary[subKey] = content;
+          } else { i++; }
         }
         result[sectionKey] = execSummary;
-      } else if (
-        sectionKey === "Stakeholders_and_Key_Personnel" ||
-        sectionKey === "Actors_Personas" ||
-        sectionKey === "Glossary"
-      ) {
-        // Table sections
-        if (i < nodeList.length && nodeList[i].type === "table") {
-          result[sectionKey] = extractTableAsArray(nodeList[i]);
-          i++;
-        } else {
-          result[sectionKey] = [];
+      }
+
+      /** 2. TABLE SECTIONS (Stakeholders, Actors, Glossary) **/
+      else if (["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"].includes(sectionKey)) {
+        let tableData: any[] = [];
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
+          const currKey = displayNameToKey(childrenToText(curr.children));
+          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+
+          if (curr.type === "table") {
+            tableData = safeCall(extractTableAsArray, curr, []);
+            i++;
+            break; // Stop after finding the primary table for this section
+          } else { i++; }
         }
-      } else if (sectionKey === "Goals_and_Objectives") {
-        // Bulleted list
-        if (i < nodeList.length && nodeList[i].type === "bulleted-list") {
-          result[sectionKey] = extractStyledBulletedListItems(nodeList[i]);
-          i++;
-        } else {
-          result[sectionKey] = [];
+        result[sectionKey] = tableData;
+      }
+
+      /** 3. LIST SECTIONS (Goals and Objectives) **/
+      else if (sectionKey === "Goals_and_Objectives") {
+        let listData: any[] = [];
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
+          const currKey = displayNameToKey(childrenToText(curr.children));
+          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+
+          if (curr.type === "bulleted-list") {
+            listData = safeCall(extractBulletedListItems, curr, []);
+            i++;
+            break;
+          } else { i++; }
         }
-      } else if (sectionKey === "Process_Scope_Summary") {
+        result[sectionKey] = listData;
+      }
+
+      /** 4. PROCESS SCOPE SUMMARY (Nested sub-headings with Summary & Lists) **/
+      else if (sectionKey === "Process_Scope_Summary") {
         const scopeObj: Record<string, any> = {};
-        while (
-          i < nodeList.length &&
-          nodeList[i].type !== "heading-five" &&
-          nodeList[i].type !== "heading-one"
-        ) {
-          if (nodeList[i].type === "heading-six") {
-            const subKey = childrenToText(nodeList[i].children).replace(
-              / /g,
-              "_",
-            );
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
+          const currKey = displayNameToKey(childrenToText(curr.children));
+          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+
+          if (curr.type === "heading-five") {
+            const subKey = childrenToText(curr.children).replace(/ /g, "_");
             i++;
             const subObj: Record<string, any> = {};
-            while (
-              i < nodeList.length &&
-              nodeList[i].type !== "heading-six" &&
-              nodeList[i].type !== "heading-five" &&
-              nodeList[i].type !== "heading-one"
-            ) {
-              if (nodeList[i].type === "paragraph") {
-                subObj["Summary"] = blockToStyledHtml(nodeList[i]);
-                i++;
-              } else if (nodeList[i].type === "bulleted-list") {
-                const listKey =
-                  subKey === "In_Scope"
-                    ? "High_Level_Requirements"
-                    : "Exclusions";
-                subObj[listKey] = extractStyledBulletedListItems(nodeList[i]);
-                i++;
-              } else {
-                i++;
+            while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
+              const item = nodeList[i];
+              if (item.type === "paragraph") {
+                subObj["Summary"] = childrenToInlineHtml(item.children);
+              } else if (item.type === "bulleted-list") {
+                const listKey = subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
+                subObj[listKey] = safeCall(extractBulletedListItems, item, []);
               }
+              i++;
             }
             scopeObj[subKey] = subObj;
-          } else {
-            i++;
-          }
+          } else { i++; }
         }
         result[sectionKey] = scopeObj;
-      } else {
-        // Unknown section — collect until next heading
+      }
+
+      /** 5. FALLBACK (Unknown heading-five sections) **/
+      else {
         const contentParts: string[] = [];
-        while (
-          i < nodeList.length &&
-          nodeList[i].type !== "heading-five" &&
-          nodeList[i].type !== "heading-one"
-        ) {
-          contentParts.push(blockToStyledHtml(nodeList[i]));
+        while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
+          contentParts.push(childrenToInlineHtml(nodeList[i].children));
           i++;
         }
         result[sectionKey] = contentParts.join("\n");
       }
-    }
-    // Fallback heading-one (e.g. Section_Citations)
+    } 
+
+    /** 6. HEADING-ONE (Metadata/Citations) **/
     else if (node.type === "heading-one") {
       const key = childrenToText(node.children).replace(/ /g, "_");
       i++;
       if (i < nodeList.length && nodeList[i].type === "paragraph") {
         const text = childrenToText(nodeList[i].children);
+        try { result[key] = JSON.parse(text); } 
+        catch { result[key] = text; }
         i++;
-        try {
-          result[key] = JSON.parse(text);
-        } catch {
-          result[key] = text;
-        }
       }
-    } else {
-      i++;
-    }
+    } 
+    else { i++; }
   }
 
   return {
