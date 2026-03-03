@@ -117,7 +117,7 @@ export const nodeToHtml = (node: Descendant): string => {
 };
 
 export const cellToHtml = (cell: { children?: Descendant[] }): string =>
-  (cell.children || []).map((child: Descendant) => nodeToHtml(child)).join("\n");
+  (cell.children || []).map((child: Descendant) => nodeToHtml(child)).join("");
 
 export const cellToHtmlArray = (cell: { children?: Descendant[] }): string[] =>
   (cell.children || [])
