@@ -660,65 +660,94 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   const nodeList = nodes as any[];
   let i = 0;
 
-  const TOP_LEVEL_SECTIONS = [
-    "Executive_Summary",
-    "Stakeholders_and_Key_Personnel",
-    "Actors_Personas",
+  // These are the ONLY display names that map to known top-level section keys.
+  // Used to detect section boundaries when heading-five is used for both
+  // top-level sections AND sub-sections (as transformBRDDataToSlate does).
+  const TOP_LEVEL_DISPLAY_NAMES = new Set([
+    "Executive Summary",
+    "Stakeholders & Key Personnel",
+    "Goals & objectives",
+    "Goals & Objectives",
+    "Process Scope Summary",
+    "Actors/Personas",
     "Glossary",
-    "Goals_and_Objectives",
-    "Process_Scope_Summary",
-  ];
+  ]);
 
-  const safeCall = (fn: any, arg: any, fallback: any = []) => {
-    try {
-      if (typeof fn !== "function") return fallback;
-      return fn(arg);
-    } catch (err) {
-      console.error(`Parser Error:`, err);
-      return fallback;
-    }
-  };
-
-  // Checks whether the current node starts a new top-level section,
-  // used as a loop boundary guard throughout the section parsers below.
-  const isNewTopLevelSection = (node: any): boolean => {
+  // Returns true only for nodes that begin a NEW top-level section.
+  // heading-five nodes whose text is NOT a known top-level display name are
+  // sub-section headings and must NOT trigger a section boundary.
+  const isTopLevelBoundary = (node: any): boolean => {
     if (!node) return false;
     if (node.type === "heading-one") return true;
     if (node.type === "heading-five") {
-      const key = displayNameToKey(childrenToText(node.children));
-      return TOP_LEVEL_SECTIONS.includes(key);
+      const text = childrenToText(node.children);
+      return TOP_LEVEL_DISPLAY_NAMES.has(text);
     }
     return false;
+  };
+
+  // Returns true for heading-five nodes that are sub-section headings
+  // (i.e. heading-five but NOT a known top-level section name).
+  const isSubHeading = (node: any): boolean => {
+    if (!node) return false;
+    if (node.type === "heading-five") {
+      const text = childrenToText(node.children);
+      return !TOP_LEVEL_DISPLAY_NAMES.has(text);
+    }
+    // heading-six is always a sub-heading
+    return node.type === "heading-six";
+  };
+
+  // Serialises a bulleted-list's items as plain strings (or styled <li> when
+  // alignment / indent / fontSize are present) to keep the JSON shape clean.
+  const bulletListToStrings = (listNode: any): string[] => {
+    return (listNode.children || []).map((item: any) => {
+      const styleProps: string[] = [];
+      if (item.align && item.align !== "left")
+        styleProps.push(`text-align:${item.align}`);
+      if (item.indent)
+        styleProps.push(`padding-left:${item.indent * 24}px`);
+      if (item.fontSize)
+        styleProps.push(`font-size:${item.fontSize}px`);
+
+      const inner = childrenToInlineHtml(item.children);
+      if (styleProps.length === 0) return inner;
+      return `<li style="${styleProps.join(";")}">${inner}</li>`;
+    });
   };
 
   while (i < nodeList.length) {
     const node = nodeList[i];
 
-    if (node.type === "heading-five") {
+    if (node.type === "heading-five" && !isSubHeading(node)) {
+      // ── Top-level section heading ──────────────────────────────────────────
       const sectionKey = displayNameToKey(childrenToText(node.children));
       i++;
 
-      /** 1. EXECUTIVE SUMMARY **/
+      // ── 1. EXECUTIVE SUMMARY ─────────────────────────────────────────────
+      // Structure produced by transformBRDDataToSlate:
+      //   heading-five "Executive Summary"   ← consumed above
+      //   heading-five "Introduction"        ← sub-key (isSubHeading = true)
+      //   paragraph    "..."
+      //   heading-five "Problem Statement"   ← sub-key
+      //   paragraph    "..."
       if (sectionKey === "Executive_Summary") {
         const execSummary: Record<string, string> = {};
 
-        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
+        while (i < nodeList.length && !isTopLevelBoundary(nodeList[i])) {
           const curr = nodeList[i];
 
-          if (curr.type === "heading-six") {
-            // Sub-key from heading-six label
+          if (isSubHeading(curr)) {
             const subKey = childrenToText(curr.children).replace(/ /g, "_");
             i++;
             const contentParts: string[] = [];
 
-            // Collect all content until next heading
+            // Collect everything until the next sub-heading or top-level boundary
             while (
               i < nodeList.length &&
-              !isNewTopLevelSection(nodeList[i]) &&
-              nodeList[i].type !== "heading-six"
+              !isTopLevelBoundary(nodeList[i]) &&
+              !isSubHeading(nodeList[i])
             ) {
-              // FIX: use blockToStyledHtml so alignment/indent/fontSize are
-              // preserved in the stored HTML string instead of being stripped.
               contentParts.push(blockToStyledHtml(nodeList[i]));
               i++;
             }
@@ -730,7 +759,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
         result[sectionKey] = execSummary;
       }
 
-      /** 2. TABLE SECTIONS **/
+      // ── 2. TABLE SECTIONS ────────────────────────────────────────────────
       else if (
         ["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"].includes(
           sectionKey
@@ -738,71 +767,71 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       ) {
         let tableData: any[] = [];
 
-        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
-          const curr = nodeList[i];
-          if (curr.type === "table") {
-            tableData = safeCall(extractTableAsArray, curr, []);
+        while (i < nodeList.length && !isTopLevelBoundary(nodeList[i])) {
+          if (nodeList[i].type === "table") {
+            tableData = extractTableAsArray(nodeList[i]);
             i++;
             break;
-          } else {
-            i++;
           }
+          i++;
         }
         result[sectionKey] = tableData;
       }
 
-      /** 3. GOALS AND OBJECTIVES (bulleted list) **/
+      // ── 3. GOALS AND OBJECTIVES ──────────────────────────────────────────
+      // Structure: heading-five → bulleted-list
+      // Items are plain strings in JSON; only wrap in <li> if styled.
       else if (sectionKey === "Goals_and_Objectives") {
-        let listData: any[] = [];
+        let listData: string[] = [];
 
-        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
-          const curr = nodeList[i];
-          if (curr.type === "bulleted-list") {
-            // FIX: use extractStyledBulletedListItems so each list-item's
-            // alignment, indent, and fontSize are serialised into the HTML
-            // string rather than being silently discarded.
-            listData = safeCall(extractStyledBulletedListItems, curr, []);
+        while (i < nodeList.length && !isTopLevelBoundary(nodeList[i])) {
+          if (nodeList[i].type === "bulleted-list") {
+            listData = bulletListToStrings(nodeList[i]);
             i++;
             break;
-          } else {
-            i++;
           }
+          i++;
         }
         result[sectionKey] = listData;
       }
 
-      /** 4. PROCESS SCOPE SUMMARY **/
+      // ── 4. PROCESS SCOPE SUMMARY ─────────────────────────────────────────
+      // Structure produced by transformBRDDataToSlate:
+      //   heading-five "Process Scope Summary"   ← consumed above
+      //   heading-five "In Scope"                ← sub-key (isSubHeading)
+      //   paragraph    "Summary text"
+      //   bulleted-list                          ← High_Level_Requirements
+      //   heading-five "Out of Scope"            ← sub-key (isSubHeading)
+      //   paragraph    "Summary text"
+      //   bulleted-list                          ← Exclusions
       else if (sectionKey === "Process_Scope_Summary") {
         const scopeObj: Record<string, any> = {};
 
-        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
+        while (i < nodeList.length && !isTopLevelBoundary(nodeList[i])) {
           const curr = nodeList[i];
 
-          if (curr.type === "heading-six") {
-            const subKey = childrenToText(curr.children).replace(/ /g, "_");
+          if (isSubHeading(curr)) {
+            // Normalise the sub-key: "In Scope" → "In_Scope", etc.
+            const rawSubName = childrenToText(curr.children);
+            const subKey = rawSubName.replace(/ /g, "_");
             i++;
             const subObj: Record<string, any> = {};
 
             while (
               i < nodeList.length &&
-              !isNewTopLevelSection(nodeList[i]) &&
-              nodeList[i].type !== "heading-six"
+              !isTopLevelBoundary(nodeList[i]) &&
+              !isSubHeading(nodeList[i])
             ) {
               const item = nodeList[i];
 
               if (item.type === "paragraph") {
-                // FIX: use blockToStyledHtml to preserve paragraph-level styles.
                 subObj["Summary"] = blockToStyledHtml(item);
                 i++;
               } else if (item.type === "bulleted-list") {
+                // In_Scope → High_Level_Requirements; anything else → Exclusions
                 const listKey =
                   subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
-                // FIX: use extractStyledBulletedListItems (same reason as above).
-                subObj[listKey] = safeCall(
-                  extractStyledBulletedListItems,
-                  item,
-                  []
-                );
+                subObj[listKey] = bulletListToStrings(item);
                 i++;
               } else {
                 i++;
@@ -816,12 +845,10 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
         result[sectionKey] = scopeObj;
       }
 
-      /** 5. FALLBACK unknown heading-five sections **/
+      // ── 5. FALLBACK ──────────────────────────────────────────────────────
       else {
         const contentParts: string[] = [];
-
-        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
-          // FIX: use blockToStyledHtml for the same reason as above.
+        while (i < nodeList.length && !isTopLevelBoundary(nodeList[i])) {
           contentParts.push(blockToStyledHtml(nodeList[i]));
           i++;
         }
@@ -829,7 +856,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       }
     }
 
-    /** 6. HEADING-ONE (Metadata / Citations) **/
+    // ── 6. HEADING-ONE (Section_Citations / metadata) ─────────────────────
     else if (node.type === "heading-one") {
       const key = childrenToText(node.children).replace(/ /g, "_");
       i++;
