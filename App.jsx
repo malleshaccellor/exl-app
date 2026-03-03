@@ -1,282 +1,272 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { createEditor, Editor, type Descendant } from "slate";
-import { Slate, Editable, withReact } from "slate-react";
-import { withHistory } from "slate-history";
-import clsx from "clsx";
-import Toolbar from "./Toolbar";
-import { withTables } from "./plugins/withTables";
-import { jsonToSlateValue } from "./utils/jsonConversion";
-import type { textStyle } from "./types";
-import styles from "./slate-editor.module.css";
+import { htmlToLeaves } from "./htmlConversion";
 
-interface SlateEditorProps {
-  value?: Descendant[];
-  defaultValue?: Descendant[];
-  onChange?: (value: Descendant[]) => void;
-  readOnly?: boolean;
-  onClickSaveBtn?: (nodes: Descendant[]) => void;
-  className?: string;
-  data?: Record<string, any>;
-  onDiscard?: () => void;
-}
-
-const toggleMark = (editor: Editor, format: textStyle) => {
-  const isActive = Editor.marks(editor)?.[format] === true;
-  if (isActive) {
-    Editor.removeMark(editor, format);
-  } else {
-    Editor.addMark(editor, format, true);
+/** If the string contains HTML tags, parse into Slate leaves with marks; otherwise plain text. */
+const parseInlineHtml = (str: string): any[] => {
+  if (!str) return [{ text: "" }];
+  if (/<\/?[a-z][\s\S]*?>/i.test(str)) {
+    return htmlToLeaves(str);
   }
+  return [{ text: str }];
 };
 
-export const SlateContentEditor = ({
-  value,
-  defaultValue = [],
-  onChange,
-  readOnly,
-  onClickSaveBtn,
-  className,
-  data,
-  onDiscard,
-}: SlateEditorProps) => {
-  const editor = useMemo(
-    () => withTables(withHistory(withReact(createEditor()))),
-    [],
-  );
+export const createSlateTable = (data: any[]): any => {
+  if (!data || data.length === 0)
+    return { type: "paragraph", children: [{ text: "" }] };
 
-  // Keep callbacks in refs to avoid stale closures
-  const onSaveRef = useRef(onClickSaveBtn);
-  onSaveRef.current = onClickSaveBtn;
-  const onDiscardRef = useRef(onDiscard);
-  onDiscardRef.current = onDiscard;
+  // Get headers from the first object's keys
+  const headers = Object.keys(data[0]);
 
-  const computedDefault = useMemo(() => {
-    if (data) return jsonToSlateValue(data);
-    return defaultValue;
-  }, [data, defaultValue]);
+  return {
+    type: "table" as const,
+    className: "editor-custom-table",
+    children: [
+      // HEADER ROW
+      {
+        type: "table-row" as const,
+        children: headers.map((header) => ({
+          type: "table-cell-header" as const,
+          children: [
+            {
+              type: "paragraph" as const,
+              children: [{ text: header.replace(/_/g, " "), bold: true }],
+            },
+          ],
+        })),
+      },
+      // DATA ROWS
+      ...data.map((row) => ({
+        type: "table-row" as const,
+        children: headers.map((key) => {
+          const val = row[key];
+          // Preserve arrays as multiple paragraphs (one per item)
+          if (Array.isArray(val)) {
+            return {
+              type: "table-cell" as const,
+              children: val.length > 0
+                ? val.map((item: string) => ({
+                    type: "paragraph" as const,
+                    children: [{ text: String(item) }],
+                  }))
+                : [{ type: "paragraph" as const, children: [{ text: "" }] }],
+            };
+          }
+          return {
+            type: "table-cell" as const,
+            children: [
+              {
+                type: "paragraph" as const,
+                children: [{ text: String(val || "") }],
+              },
+            ],
+          };
+        }),
+      })),
+    ],
+  };
+};
 
-  const [internalValue, setInternalValue] =
-    useState<Descendant[]>(computedDefault);
-  const editorValue = useMemo(
-    () => value ?? internalValue,
-    [value, internalValue],
-  );
+export const createSlateBulletedList = (items: string[]): any => {
+  return {
+    type: "bulleted-list" as const,
+    children: items.map((item) => ({
+      type: "list-item" as const,
+      children: [{ text: String(item) }],
+    })),
+  };
+};
 
-  const handleChange = useCallback(
-    (val: Descendant[]) => {
-      if (!value) {
-        setInternalValue(val);
-      }
-      onChange?.(val);
-    },
-    [value, onChange],
-  );
+export const createSlateNumberedList = (items: string[]): any => {
+  return {
+    type: "numbered-list" as const,
+    children: items.map((item) => ({
+      type: "list-item" as const,
+      children: [{ text: String(item) }],
+    })),
+  };
+};
 
-  const handleSave = useCallback(() => {
-    onSaveRef.current?.(editor.children);
-  }, [editor]);
+/** BRD-specific table builder that parses inline HTML in cell values */
+const createBrdSlateTable = (data: any[]): any => {
+  if (!data || data.length === 0)
+    return { type: "paragraph", children: [{ text: "" }] };
 
-  const handleDiscard = useCallback(() => {
-    onDiscardRef.current?.();
-  }, []);
+  const headers = Object.keys(data[0]);
 
-  const renderLeaf = useCallback(({ attributes, children, leaf }: any) => {
-    if (leaf.bold) children = <strong>{children}</strong>;
-    if (leaf.italic) children = <em>{children}</em>;
-    if (leaf.underline) children = <u>{children}</u>;
-    if (leaf.strikethrough) children = <s>{children}</s>;
-    if (leaf.code) children = <code>{children}</code>;
+  return {
+    type: "table" as const,
+    className: "editor-custom-table",
+    children: [
+      {
+        type: "table-row" as const,
+        children: headers.map((header) => ({
+          type: "table-cell-header" as const,
+          children: [
+            {
+              type: "paragraph" as const,
+              children: [{ text: header.replace(/_/g, " "), bold: true }],
+            },
+          ],
+        })),
+      },
+      ...data.map((row) => ({
+        type: "table-row" as const,
+        children: headers.map((key) => {
+          const val = row[key];
+          if (Array.isArray(val)) {
+            return {
+              type: "table-cell" as const,
+              children: val.length > 0
+                ? val.map((item: string) => ({
+                    type: "paragraph" as const,
+                    children: parseInlineHtml(String(item)),
+                  }))
+                : [{ type: "paragraph" as const, children: [{ text: "" }] }],
+            };
+          }
+          return {
+            type: "table-cell" as const,
+            children: [
+              {
+                type: "paragraph" as const,
+                children: parseInlineHtml(String(val || "")),
+              },
+            ],
+          };
+        }),
+      })),
+    ],
+  };
+};
 
-    return <span {...attributes}>{children}</span>;
-  }, []);
+/** BRD-specific bulleted list that parses inline HTML in items */
+const createBrdBulletedList = (items: string[]): any => {
+  return {
+    type: "bulleted-list" as const,
+    children: items.map((item) => ({
+      type: "list-item" as const,
+      children: parseInlineHtml(String(item)),
+    })),
+  };
+};
 
-  const renderElement = useCallback(
-    ({ attributes, children, element }: any) => {
-      const style = {
-        textAlign: element.align || "left",
-        paddingLeft: element.indent ? `${element.indent * 24}px` : undefined,
-        fontSize: element.fontSize ? `${element.fontSize}px` : undefined,
+export const transformBRDDataToSlate = (obj: any) => {
+  if (!obj) return [{ type: "paragraph", children: [{ text: "" }] }];
+
+  return Object.entries(obj).flatMap(([key, value]) => {
+    if (
+      key === "Executive_Summary" &&
+      typeof value === "object" &&
+      value !== null
+    ) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Executive Summary" }],
       };
 
-      switch (element.type) {
-        case "heading-one":
-          return (
-            <h1 {...attributes} style={style}>
-              {children}
-            </h1>
-          );
-        case "heading-two":
-          return (
-            <h2 {...attributes} style={style}>
-              {children}
-            </h2>
-          );
-        case "heading-three":
-          return (
-            <h3 {...attributes} style={style}>
-              {children}
-            </h3>
-          );
-        case "heading-four":
-          return (
-            <h4 {...attributes} style={style}>
-              {children}
-            </h4>
-          );
-        case "heading-five":
-          return (
-            <h5 {...attributes} style={style}>
-              {children}
-            </h5>
-          );
-        case "heading-six":
-          return (
-            <h6 {...attributes} style={style}>
-              {children}
-            </h6>
-          );
-        case "bulleted-list":
-          return (
-            <ul {...attributes} style={style}>
-              {children}
-            </ul>
-          );
-        case "numbered-list":
-          return (
-            <ol {...attributes} style={style}>
-              {children}
-            </ol>
-          );
-        case "list-item":
-          return (
-            <li {...attributes} style={style}>
-              {children}
-            </li>
+      const subNodes = Object.entries(value).flatMap(([subKey, subValue]) => [
+        {
+          type: "heading-five" as const,
+          children: [{ text: subKey.replace(/_/g, " ") }],
+        },
+        {
+          type: "paragraph" as const,
+          children: parseInlineHtml(String(subValue)),
+        },
+      ]);
+
+      return [sectionHeader, ...subNodes];
+    }
+
+    if (key === "Stakeholders_and_Key_Personnel" && Array.isArray(value)) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Stakeholders & Key Personnel" }],
+      };
+
+      const tableNode = createBrdSlateTable(value);
+
+      return [sectionHeader, tableNode];
+    }
+
+    if (key === "Goals_and_Objectives" && Array.isArray(value)) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Goals & objectives" }],
+      };
+
+      const listNodes = createBrdBulletedList(value);
+
+      return [sectionHeader, listNodes];
+    }
+
+    if (key === "Process_Scope_Summary" && typeof value === "object" && value !== null) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Process Scope Summary" }],
+      };
+
+      const scopeNodes = Object.entries(value).flatMap(
+        ([scopeKey, scopeValue]: [string, any]) => {
+          const scopeTitle = {
+            type: "heading-five" as const,
+            children: [{ text: scopeKey.replace(/_/g, " ") }],
+          };
+
+          // Process the content inside In_Scope / Out_of_Scope
+          const scopeContent = Object.entries(scopeValue as Record<string, any>).flatMap(
+            ([_subKey, subValue]: [string, any]) => {
+              // 1. If it's the list of requirements/exclusions (Array)
+              if (Array.isArray(subValue)) {
+                return [createBrdBulletedList(subValue)];
+              }
+
+              // 2. If it's the Summary (String)
+              return [
+                {
+                  type: "paragraph" as const,
+                  children: parseInlineHtml(String(subValue)),
+                },
+              ];
+            },
           );
 
-        case "block-quote":
-          return (
-            <blockquote
-              {...attributes}
-              style={{
-                borderLeft: "3px solid #ccc",
-                color: "#666",
-                ...style,
-                paddingLeft: style.paddingLeft || "12px",
-              }}
-            >
-              {children}
-            </blockquote>
-          );
+          return [scopeTitle, ...scopeContent];
+        },
+      );
 
-        case "code-block":
-          return (
-            <pre
-              {...attributes}
-              style={{
-                background: "#f5f5f5",
-                padding: 12,
-                ...style,
-              }}
-            >
-              <code>{children}</code>
-            </pre>
-          );
-        case "table":
-          return (
-            <table className={element.className || "table"}>
-              <tbody {...attributes}>{children}</tbody>
-            </table>
-          );
-        case "table-row":
-          return (
-            <tr {...attributes} style={style}>
-              {children}
-            </tr>
-          );
-        case "table-cell-header":
-          return (
-            <th {...attributes} style={style}>
-              {children}
-            </th>
-          );
-        case "table-cell":
-          if (element.isHeader) {
-            return (
-              <th {...attributes} style={style}>
-                {children}
-              </th>
-            );
-          }
-          return (
-            <td {...attributes} style={style}>
-              {children}
-            </td>
-          );
-        case "paragraph":
-          return (
-            <p {...attributes} style={{ margin: "2px 0", ...style }}>
-              {children}
-            </p>
-          );
-        default:
-          return (
-            <p {...attributes} style={style}>
-              {children}
-            </p>
-          );
-      }
-    },
-    [],
-  );
+      return [sectionHeader, ...scopeNodes];
+    }
 
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      switch (event.key) {
-        case "b":
-          event.preventDefault();
-          toggleMark(editor, "bold");
-          break;
-        case "i":
-          event.preventDefault();
-          toggleMark(editor, "italic");
-          break;
-        case "u":
-          event.preventDefault();
-          toggleMark(editor, "underline");
-          break;
-      }
-    },
-    [editor],
-  );
+    if (key === "Glossary" && Array.isArray(value)) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Glossary" }],
+      };
 
-  return (
-    <>
-      <div className={styles.editorContainer}>
-        <div className={styles.editorArea}>
-          <Slate
-            editor={editor}
-            initialValue={editorValue}
-            onChange={handleChange}
-          >
-            <Toolbar
-              onClickSaveBtn={onClickSaveBtn ? handleSave : undefined}
-              buttonLabel="Save"
-              onDiscard={onDiscard ? handleDiscard : undefined}
-            />
-            <Editable
-              renderLeaf={renderLeaf}
-              renderElement={renderElement}
-              readOnly={readOnly}
-              onKeyDown={handleKeyDown}
-              className={clsx(styles.editableArea, className)}
-            />
-          </Slate>
-        </div>
-      </div>
-    </>
-  );
+      const tableNode = createBrdSlateTable(value);
+
+      return [sectionHeader, tableNode];
+    }
+
+    if (key === "Actors_Personas" && Array.isArray(value)) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Actors/Personas" }],
+      };
+
+      const tableNode = createBrdSlateTable(value);
+
+      return [sectionHeader, tableNode];
+    }
+
+    return [
+      { type: "heading-one" as const, children: [{ text: key }] },
+      {
+        type: "paragraph" as const,
+        children: parseInlineHtml(
+          typeof value === "object" ? JSON.stringify(value) : String(value),
+        ),
+      },
+    ];
+  });
 };
-
-export default SlateContentEditor;
