@@ -698,8 +698,15 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
     return node.type === "heading-six";
   };
 
-  // Serialises a bulleted-list's items as plain strings (or styled <li> when
-  // alignment / indent / fontSize are present) to keep the JSON shape clean.
+  // Serialises a bulleted-list node's items as strings for JSON storage.
+  //
+  // Plain items (no block styles) → bare inline HTML string, e.g. "Goal text"
+  // Styled items (indent/align/fontSize) → "<span data-brd-li="padding-left:24px">text</span>"
+  //
+  // The data-brd-li marker is detected by createBrdBulletedList in index.ts,
+  // which extracts the style string back onto the list-item Slate node.
+  // We avoid wrapping in <li> because htmlToSlateNodes would double-nest it
+  // inside another bulleted-list when createBrdBulletedList processes it.
   const bulletListToStrings = (listNode: any): string[] => {
     return (listNode.children || []).map((item: any) => {
       const styleProps: string[] = [];
@@ -712,7 +719,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
 
       const inner = childrenToInlineHtml(item.children);
       if (styleProps.length === 0) return inner;
-      return `<li style="${styleProps.join(";")}">${inner}</li>`;
+      return `<span data-brd-li="${styleProps.join(";")}">${inner}</span>`;
     });
   };
 
