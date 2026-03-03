@@ -29,6 +29,32 @@ const toggleMark = (editor: Editor, format: textStyle) => {
   }
 };
 
+/**
+ * Builds a React style object from Slate element block props.
+ *
+ * FIX: textAlign is omitted (not defaulted to "left") when element.align is
+ * undefined. Defaulting to "left" was silently overriding CSS inheritance and
+ * forcing all unstyled elements to left-align even when the stylesheet or
+ * parent had a different alignment.
+ *
+ * FIX: fontSize is applied as a string with "px" suffix; guard against NaN.
+ */
+const blockStyle = (element: any): React.CSSProperties => {
+  const style: React.CSSProperties = {};
+
+  if (element.align) {
+    style.textAlign = element.align as React.CSSProperties["textAlign"];
+  }
+  if (element.indent && typeof element.indent === "number") {
+    style.paddingLeft = `${element.indent * 24}px`;
+  }
+  if (element.fontSize && typeof element.fontSize === "number") {
+    style.fontSize = `${element.fontSize}px`;
+  }
+
+  return style;
+};
+
 export const SlateContentEditor = ({
   value,
   defaultValue = [],
@@ -44,7 +70,6 @@ export const SlateContentEditor = ({
     [],
   );
 
-  // Keep callbacks in refs to avoid stale closures
   const onSaveRef = useRef(onClickSaveBtn);
   onSaveRef.current = onClickSaveBtn;
   const onDiscardRef = useRef(onDiscard);
@@ -92,67 +117,43 @@ export const SlateContentEditor = ({
 
   const renderElement = useCallback(
     ({ attributes, children, element }: any) => {
-      const style = {
-        textAlign: element.align || "left",
-        paddingLeft: element.indent ? `${element.indent * 24}px` : undefined,
-        fontSize: element.fontSize ? `${element.fontSize}px` : undefined,
-      };
+      // FIX: use blockStyle() which only sets properties that are explicitly
+      // present on the element — no more forced "left" textAlign default.
+      const style = blockStyle(element);
 
       switch (element.type) {
         case "heading-one":
-          return (
-            <h1 {...attributes} style={style}>
-              {children}
-            </h1>
-          );
+          return <h1 {...attributes} style={style}>{children}</h1>;
+
         case "heading-two":
-          return (
-            <h2 {...attributes} style={style}>
-              {children}
-            </h2>
-          );
+          return <h2 {...attributes} style={style}>{children}</h2>;
+
         case "heading-three":
-          return (
-            <h3 {...attributes} style={style}>
-              {children}
-            </h3>
-          );
+          return <h3 {...attributes} style={style}>{children}</h3>;
+
         case "heading-four":
-          return (
-            <h4 {...attributes} style={style}>
-              {children}
-            </h4>
-          );
+          return <h4 {...attributes} style={style}>{children}</h4>;
+
         case "heading-five":
-          return (
-            <h5 {...attributes} style={style}>
-              {children}
-            </h5>
-          );
+          return <h5 {...attributes} style={style}>{children}</h5>;
+
         case "heading-six":
-          return (
-            <h6 {...attributes} style={style}>
-              {children}
-            </h6>
-          );
+          return <h6 {...attributes} style={style}>{children}</h6>;
+
         case "bulleted-list":
-          return (
-            <ul {...attributes} style={style}>
-              {children}
-            </ul>
-          );
+          // FIX: bulleted-list node itself never carries align/indent/fontSize —
+          // those props live on the child list-item nodes. Render <ul> without
+          // a style prop to avoid accidentally clobbering list-item styles via
+          // CSS inheritance (e.g. text-align on <ul> overrides <li> alignment).
+          return <ul {...attributes}>{children}</ul>;
+
         case "numbered-list":
-          return (
-            <ol {...attributes} style={style}>
-              {children}
-            </ol>
-          );
+          return <ol {...attributes}>{children}</ol>;
+
         case "list-item":
-          return (
-            <li {...attributes} style={style}>
-              {children}
-            </li>
-          );
+          // FIX: apply blockStyle to <li> so indent (padding-left),
+          // align (text-align), and fontSize are all rendered correctly.
+          return <li {...attributes} style={style}>{children}</li>;
 
         case "block-quote":
           return (
@@ -161,8 +162,8 @@ export const SlateContentEditor = ({
               style={{
                 borderLeft: "3px solid #ccc",
                 color: "#666",
-                ...style,
                 paddingLeft: style.paddingLeft || "12px",
+                ...style,
               }}
             >
               {children}
@@ -173,58 +174,40 @@ export const SlateContentEditor = ({
           return (
             <pre
               {...attributes}
-              style={{
-                background: "#f5f5f5",
-                padding: 12,
-                ...style,
-              }}
+              style={{ background: "#f5f5f5", padding: 12, ...style }}
             >
               <code>{children}</code>
             </pre>
           );
+
         case "table":
           return (
             <table className={element.className || "table"}>
               <tbody {...attributes}>{children}</tbody>
             </table>
           );
+
         case "table-row":
-          return (
-            <tr {...attributes} style={style}>
-              {children}
-            </tr>
-          );
+          return <tr {...attributes}>{children}</tr>;
+
         case "table-cell-header":
-          return (
-            <th {...attributes} style={style}>
-              {children}
-            </th>
-          );
+          return <th {...attributes} style={style}>{children}</th>;
+
         case "table-cell":
           if (element.isHeader) {
-            return (
-              <th {...attributes} style={style}>
-                {children}
-              </th>
-            );
+            return <th {...attributes} style={style}>{children}</th>;
           }
-          return (
-            <td {...attributes} style={style}>
-              {children}
-            </td>
-          );
+          return <td {...attributes} style={style}>{children}</td>;
+
         case "paragraph":
           return (
             <p {...attributes} style={{ margin: "2px 0", ...style }}>
               {children}
             </p>
           );
+
         default:
-          return (
-            <p {...attributes} style={style}>
-              {children}
-            </p>
-          );
+          return <p {...attributes} style={style}>{children}</p>;
       }
     },
     [],
