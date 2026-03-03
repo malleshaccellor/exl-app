@@ -665,7 +665,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
           nodeList[i].type !== "heading-five" &&
           nodeList[i].type !== "heading-one"
         ) {
-          if (nodeList[i].type === "heading-five") {
+          if (nodeList[i].type === "heading-six") {
             const subKey = childrenToText(nodeList[i].children).replace(
               / /g,
               "_",
@@ -707,7 +707,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
           nodeList[i].type !== "heading-five" &&
           nodeList[i].type !== "heading-one"
         ) {
-          if (nodeList[i].type === "heading-five") {
+          if (nodeList[i].type === "heading-six") {
             const subKey = childrenToText(nodeList[i].children).replace(
               / /g,
               "_",
@@ -716,7 +716,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
             const subObj: Record<string, any> = {};
             while (
               i < nodeList.length &&
-              nodeList[i].type !== "heading-five" &&
+              nodeList[i].type !== "heading-six" &&
               nodeList[i].type !== "heading-five" &&
               nodeList[i].type !== "heading-one"
             ) {
