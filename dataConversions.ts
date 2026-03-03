@@ -168,7 +168,6 @@ export const slateToTestCasesJson = (nodes: Descendant[]): any => {
     });
   }
 
-  // Convert maps back to arrays
   const requirements = Object.values(reqMap).map((req: any) => ({
     req_id: req.req_id,
     UserStories: Object.values(req.UserStories).map((story: any) => ({
@@ -253,9 +252,7 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
 
-  // Handle previously saved HTML data (from old save code)
   let cleanText = text.trim();
-  // Strip wrapping quotes if present (double-encoded responses)
   if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
     try {
       cleanText = JSON.parse(cleanText);
@@ -263,11 +260,9 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       // not valid JSON, use as-is
     }
   }
-  // Replace literal \n (escaped newlines) with actual newlines
   if (cleanText.includes("\\n")) {
     cleanText = cleanText.replace(/\\n/g, "\n");
   }
-  // If the content is HTML, parse it using the HTML parser
   if (/^<[a-z][\s\S]*>/i.test(cleanText.trim())) {
     return htmlToSlateNodes(cleanText);
   }
@@ -325,7 +320,7 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       parts = newParts;
     };
 
-    applyRegex(boldItalicRegex, "bold"); // Will need manual fix for nested marks
+    applyRegex(boldItalicRegex, "bold");
     applyRegex(boldRegex, "bold");
     applyRegex(italicRegex, "italic");
     applyRegex(strikethroughRegex, "strikethrough");
@@ -343,7 +338,6 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    // Numbered heading: "1. **Heading Text**"
     const numberedHeadingMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*\s*$/);
     if (numberedHeadingMatch) {
       flushList();
@@ -354,8 +348,6 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    // Sub-heading: short title-case phrase ending with colon (max 6 words)
-    // Avoids matching full sentences like "Here's a structured summary...:"
     const subHeadingMatch = trimmed.match(/^([A-Z][^-*].+):$/);
     if (
       subHeadingMatch &&
@@ -371,7 +363,6 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    // Bullet item — use raw line to detect indentation level
     const bulletMatch = line.match(/^(\s*)([-*])\s+(.+)$/);
     if (bulletMatch) {
       const leadingSpaces = bulletMatch[1].length;
@@ -434,8 +425,6 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
   for (const node of nodes as any[]) {
     const nodeType = (node as any).type;
 
-    // Add blank line (\n\n) between blocks to preserve original spacing.
-    // Exception: heading → list stays tight (no blank line between them).
     if (prevType && lines.length > 0) {
       const isHeadingToList =
         prevType === "heading-five" &&
@@ -455,8 +444,6 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
       }
       case "paragraph": {
         const children = node.children || [];
-        // Detect standalone bold subheadings (were originally "Text:")
-        // Use raw text without ** marks — bold was only for editor display
         if (
           children.length === 1 &&
           children[0].bold &&
@@ -506,6 +493,10 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
   return { response: lines.join("\n") };
 };
 
+// ============================================================
+// BRD — shared inline serializer (marks only, no block props)
+// ============================================================
+
 const leafToInlineHtml = (node: any): string => {
   if (!node || !("text" in node)) return "";
   let html = node.text as string;
@@ -528,10 +519,64 @@ const childrenToInlineHtml = (children: any[]): string => {
 };
 
 // ============================================================
+// BRD — NEW: block serializer that preserves align/indent/fontSize
+// ============================================================
+
+/**
+ * Serializes a single Slate block node (paragraph, list-item, heading, etc.)
+ * to an HTML string that includes a style attribute for alignment, indent,
+ * and font-size so the round-trip through htmlToSlateNodes restores them.
+ */
+const blockToStyledHtml = (node: any): string => {
+  const styleProps: string[] = [];
+  if (node.align && node.align !== "left")
+    styleProps.push(`text-align:${node.align}`);
+  if (node.indent)
+    styleProps.push(`padding-left:${node.indent * 24}px`);
+  if (node.fontSize)
+    styleProps.push(`font-size:${node.fontSize}px`);
+
+  const inner = childrenToInlineHtml(node.children);
+  const styleAttr = styleProps.length ? ` style="${styleProps.join(";")}"` : "";
+
+  const tagMap: Record<string, string> = {
+    paragraph: "p",
+    "heading-one": "h1",
+    "heading-two": "h2",
+    "heading-three": "h3",
+    "heading-four": "h4",
+    "heading-five": "h5",
+    "heading-six": "h6",
+    "list-item": "li",
+    "block-quote": "blockquote",
+  };
+  const tag = tagMap[node.type] || "p";
+  return `<${tag}${styleAttr}>${inner}</${tag}>`;
+};
+
+// ============================================================
+// BRD — NEW: bullet list extractor that preserves block props
+// ============================================================
+
+/**
+ * Extracts list items from a bulleted-list node as styled HTML strings.
+ * Each <li> carries style attributes for alignment, indent, and font-size
+ * so that htmlToSlateNodes can restore them on the return trip.
+ *
+ * Previously this just called childrenToInlineHtml(item.children) which
+ * only preserved inline marks (bold/italic) and silently dropped every
+ * block-level property.
+ */
+const extractStyledBulletedListItems = (listNode: any): string[] => {
+  return (listNode.children || []).map((item: any) => {
+    return blockToStyledHtml(item);
+  });
+};
+
+// ============================================================
 // BRD (Slate → structured JSON)
 // ============================================================
 
-// Reverse display-name → JSON key mapping for top-level sections
 const BRD_SECTION_DISPLAY_TO_KEY: Record<string, string> = {
   "Executive Summary": "Executive_Summary",
   "Stakeholders & Key Personnel": "Stakeholders_and_Key_Personnel",
@@ -570,15 +615,13 @@ const extractTableAsArray = (tableNode: any): any[] => {
     (row.children || []).forEach((cell: any, i: number) => {
       if (i < headers.length) {
         const paragraphs = (cell.children || []).filter(
-          (c: any) => c.type === "paragraph",
+          (c: any) => c.type === "paragraph"
         );
         if (paragraphs.length > 1) {
-          // Multiple paragraphs → was originally an array
           obj[headers[i]] = paragraphs.map((p: any) =>
-            childrenToInlineHtml([p]),
+            childrenToInlineHtml([p])
           );
         } else {
-          // Single paragraph → string
           obj[headers[i]] = childrenToInlineHtml(cell.children);
         }
       }
@@ -587,18 +630,10 @@ const extractTableAsArray = (tableNode: any): any[] => {
   });
 };
 
-const extractBulletedListItems = (listNode: any): string[] => {
-  return (listNode.children || []).map((item: any) =>
-    childrenToInlineHtml(item.children),
-  );
-};
-
 export const brdToSlateValue = (rawResponse: string): Descendant[] => {
-  // Handle previously saved HTML data (from old save code)
   let cleanRaw =
     typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
   if (typeof cleanRaw === "string") {
-    // Strip wrapping quotes if present
     if (cleanRaw.startsWith('"') && cleanRaw.endsWith('"')) {
       try {
         cleanRaw = JSON.parse(cleanRaw);
@@ -606,11 +641,9 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
         // not valid JSON string, use as-is
       }
     }
-    // Replace literal \n with actual newlines
     if (typeof cleanRaw === "string" && cleanRaw.includes("\\n")) {
       cleanRaw = cleanRaw.replace(/\\n/g, "\n");
     }
-    // If the content is HTML, parse it using the HTML parser
     if (
       typeof cleanRaw === "string" &&
       /^<[a-z][\s\S]*>/i.test(cleanRaw.trim())
@@ -627,17 +660,15 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   const nodeList = nodes as any[];
   let i = 0;
 
-  // List of all top-level section keys to prevent one section from "eating" another
   const TOP_LEVEL_SECTIONS = [
     "Executive_Summary",
     "Stakeholders_and_Key_Personnel",
     "Actors_Personas",
     "Glossary",
     "Goals_and_Objectives",
-    "Process_Scope_Summary"
+    "Process_Scope_Summary",
   ];
 
-  // Helper to safely call external functions like extractTableAsArray
   const safeCall = (fn: any, arg: any, fallback: any = []) => {
     try {
       if (typeof fn !== "function") return fallback;
@@ -648,6 +679,18 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
     }
   };
 
+  // Checks whether the current node starts a new top-level section,
+  // used as a loop boundary guard throughout the section parsers below.
+  const isNewTopLevelSection = (node: any): boolean => {
+    if (!node) return false;
+    if (node.type === "heading-one") return true;
+    if (node.type === "heading-five") {
+      const key = displayNameToKey(childrenToText(node.children));
+      return TOP_LEVEL_SECTIONS.includes(key);
+    }
+    return false;
+  };
+
   while (i < nodeList.length) {
     const node = nodeList[i];
 
@@ -655,114 +698,153 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       const sectionKey = displayNameToKey(childrenToText(node.children));
       i++;
 
-      /** 1. EXECUTIVE SUMMARY (Nested sub-headings) **/
+      /** 1. EXECUTIVE SUMMARY **/
       if (sectionKey === "Executive_Summary") {
         const execSummary: Record<string, string> = {};
-        while (i < nodeList.length) {
+
+        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
           const curr = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
 
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
-
-          if (curr.type === "heading-five") {
+          if (curr.type === "heading-six") {
+            // Sub-key from heading-six label
             const subKey = childrenToText(curr.children).replace(/ /g, "_");
             i++;
-            let content = "";
-            while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
-              content += childrenToInlineHtml(nodeList[i].children);
+            const contentParts: string[] = [];
+
+            // Collect all content until next heading
+            while (
+              i < nodeList.length &&
+              !isNewTopLevelSection(nodeList[i]) &&
+              nodeList[i].type !== "heading-six"
+            ) {
+              // FIX: use blockToStyledHtml so alignment/indent/fontSize are
+              // preserved in the stored HTML string instead of being stripped.
+              contentParts.push(blockToStyledHtml(nodeList[i]));
               i++;
             }
-            execSummary[subKey] = content;
-          } else { i++; }
+            execSummary[subKey] = contentParts.join("");
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = execSummary;
       }
 
-      /** 2. TABLE SECTIONS (Stakeholders, Actors, Glossary) **/
-      else if (["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"].includes(sectionKey)) {
+      /** 2. TABLE SECTIONS **/
+      else if (
+        ["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"].includes(
+          sectionKey
+        )
+      ) {
         let tableData: any[] = [];
-        while (i < nodeList.length) {
-          const curr = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
 
+        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
+          const curr = nodeList[i];
           if (curr.type === "table") {
             tableData = safeCall(extractTableAsArray, curr, []);
             i++;
-            break; // Stop after finding the primary table for this section
-          } else { i++; }
+            break;
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = tableData;
       }
 
-      /** 3. LIST SECTIONS (Goals and Objectives) **/
+      /** 3. GOALS AND OBJECTIVES (bulleted list) **/
       else if (sectionKey === "Goals_and_Objectives") {
         let listData: any[] = [];
-        while (i < nodeList.length) {
-          const curr = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
 
+        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
+          const curr = nodeList[i];
           if (curr.type === "bulleted-list") {
-            listData = safeCall(extractBulletedListItems, curr, []);
+            // FIX: use extractStyledBulletedListItems so each list-item's
+            // alignment, indent, and fontSize are serialised into the HTML
+            // string rather than being silently discarded.
+            listData = safeCall(extractStyledBulletedListItems, curr, []);
             i++;
             break;
-          } else { i++; }
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = listData;
       }
 
-      /** 4. PROCESS SCOPE SUMMARY (Nested sub-headings with Summary & Lists) **/
+      /** 4. PROCESS SCOPE SUMMARY **/
       else if (sectionKey === "Process_Scope_Summary") {
         const scopeObj: Record<string, any> = {};
-        while (i < nodeList.length) {
-          const curr = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
 
-          if (curr.type === "heading-five") {
+        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
+          const curr = nodeList[i];
+
+          if (curr.type === "heading-six") {
             const subKey = childrenToText(curr.children).replace(/ /g, "_");
             i++;
             const subObj: Record<string, any> = {};
-            while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
+
+            while (
+              i < nodeList.length &&
+              !isNewTopLevelSection(nodeList[i]) &&
+              nodeList[i].type !== "heading-six"
+            ) {
               const item = nodeList[i];
+
               if (item.type === "paragraph") {
-                subObj["Summary"] = childrenToInlineHtml(item.children);
+                // FIX: use blockToStyledHtml to preserve paragraph-level styles.
+                subObj["Summary"] = blockToStyledHtml(item);
+                i++;
               } else if (item.type === "bulleted-list") {
-                const listKey = subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
-                subObj[listKey] = safeCall(extractBulletedListItems, item, []);
+                const listKey =
+                  subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
+                // FIX: use extractStyledBulletedListItems (same reason as above).
+                subObj[listKey] = safeCall(
+                  extractStyledBulletedListItems,
+                  item,
+                  []
+                );
+                i++;
+              } else {
+                i++;
               }
-              i++;
             }
             scopeObj[subKey] = subObj;
-          } else { i++; }
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = scopeObj;
       }
 
-      /** 5. FALLBACK (Unknown heading-five sections) **/
+      /** 5. FALLBACK unknown heading-five sections **/
       else {
         const contentParts: string[] = [];
-        while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
-          contentParts.push(childrenToInlineHtml(nodeList[i].children));
+
+        while (i < nodeList.length && !isNewTopLevelSection(nodeList[i])) {
+          // FIX: use blockToStyledHtml for the same reason as above.
+          contentParts.push(blockToStyledHtml(nodeList[i]));
           i++;
         }
         result[sectionKey] = contentParts.join("\n");
       }
-    } 
+    }
 
-    /** 6. HEADING-ONE (Metadata/Citations) **/
+    /** 6. HEADING-ONE (Metadata / Citations) **/
     else if (node.type === "heading-one") {
       const key = childrenToText(node.children).replace(/ /g, "_");
       i++;
       if (i < nodeList.length && nodeList[i].type === "paragraph") {
         const text = childrenToText(nodeList[i].children);
-        try { result[key] = JSON.parse(text); } 
-        catch { result[key] = text; }
+        try {
+          result[key] = JSON.parse(text);
+        } catch {
+          result[key] = text;
+        }
         i++;
       }
-    } 
-    else { i++; }
+    } else {
+      i++;
+    }
   }
 
   return {
