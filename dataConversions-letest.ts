@@ -1,26 +1,20 @@
 import type { Descendant } from "slate";
 import type { CustomText } from "../types";
 
-// ─── Slate → HTML ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// SLATE → HTML
+// ─────────────────────────────────────────────────────────────────────────────
 
-const escapeHtml = (text: string): string =>
-  text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-/** Build a style attribute string from a Slate block element node */
-const buildStyleAttr = (el: any): string => {
-  const props: string[] = [];
-  if (el.align && el.align !== "left") props.push(`text-align:${el.align}`);
-  if (el.indent) props.push(`padding-left:${el.indent * 24}px`);
-  if (el.fontSize) props.push(`font-size:${el.fontSize}px`);
-  return props.length > 0 ? ` style="${props.join(";")}"` : "";
+const buildStyle = (el: any): string => {
+  const parts: string[] = [];
+  if (el.align && el.align !== "left") parts.push(`text-align:${el.align}`);
+  if (el.indent) parts.push(`padding-left:${el.indent * 24}px`);
+  if (el.fontSize) parts.push(`font-size:${el.fontSize}px`);
+  return parts.length ? ` style="${parts.join(";")}"` : "";
 };
 
-/** Serialize a single leaf (text node) with inline marks → HTML */
-const serializeLeaf = (leaf: CustomText, escape = true): string => {
-  let html = escape ? escapeHtml(leaf.text) : leaf.text;
+const serializeLeaf = (leaf: CustomText): string => {
+  let html = leaf.text;
   if (leaf.code) html = `<code>${html}</code>`;
   if (leaf.italic) html = `<em>${html}</em>`;
   if (leaf.bold) html = `<strong>${html}</strong>`;
@@ -29,7 +23,8 @@ const serializeLeaf = (leaf: CustomText, escape = true): string => {
   return html;
 };
 
-const FULL_TAG_MAP: Record<string, string> = {
+const SLATE_TO_TAG: Record<string, string> = {
+  paragraph: "p",
   "heading-one": "h1",
   "heading-two": "h2",
   "heading-three": "h3",
@@ -37,127 +32,46 @@ const FULL_TAG_MAP: Record<string, string> = {
   "heading-five": "h5",
   "heading-six": "h6",
   "block-quote": "blockquote",
-  "numbered-list": "ol",
   "bulleted-list": "ul",
+  "numbered-list": "ol",
   "list-item": "li",
-  paragraph: "p",
+  table: "table",
+  "table-row": "tr",
+  "table-cell": "td",
+  "table-cell-header": "th",
 };
 
-/** Full recursive serializer — preserves ALL block formatting (align, indent, fontSize) */
-const serializeNode = (node: Descendant): string => {
+/**
+ * nodeToHtml — single authoritative Slate→HTML serializer.
+ * Preserves align / indent / fontSize on every block node.
+ * Exported so dataConversions.ts can use it directly.
+ */
+export const nodeToHtml = (node: Descendant): string => {
   if ("text" in node) return serializeLeaf(node as CustomText);
 
   const el = node as any;
-  const children = (el.children || [])
-    .map((child: Descendant) => serializeNode(child))
-    .join("");
-  const styleAttr = buildStyleAttr(el);
-  const tag = FULL_TAG_MAP[el.type];
+  const style = buildStyle(el);
+  const inner = (el.children || []).map((c: Descendant) => nodeToHtml(c)).join("");
+  const tag = SLATE_TO_TAG[el.type];
 
-  if (tag) return `<${tag}${styleAttr}>${children}</${tag}>`;
-
-  switch (el.type) {
-    case "code-block":
-      return `<pre${styleAttr}><code>${children}</code></pre>`;
-    case "table":
-      return `<table${styleAttr}>${children}</table>`;
-    case "table-row":
-      return `<tr${styleAttr}>${children}</tr>`;
-    case "table-cell-header":
-      return `<th${styleAttr}>${children}</th>`;
-    case "table-cell":
-      return (el.isHeader)
-        ? `<th${styleAttr}>${children}</th>`
-        : `<td${styleAttr}>${children}</td>`;
-    default:
-      return styleAttr ? `<div${styleAttr}>${children}</div>` : children;
-  }
+  if (el.type === "code-block") return `<pre${style}><code>${inner}</code></pre>`;
+  if (tag) return `<${tag}${style}>${inner}</${tag}>`;
+  return style ? `<div${style}>${inner}</div>` : inner;
 };
 
-export const slateToHtml = (nodes: Descendant[]): string =>
-  nodes.map((node) => serializeNode(node)).join("\n");
-
-// ─── Inline-only serializer (no escaping, for BRD round-trip) ────────────────
-
-export const leafToHtml = (leaf: CustomText): string =>
-  serializeLeaf(leaf, false);
-
-/**
- * nodeToHtml — used by cellToHtml / cellToHtmlArray.
- * Serializes a node with full inline marks AND block styles preserved.
- */
-export const nodeToHtml = (node: Descendant): string => {
-  if ("text" in node) return leafToHtml(node as CustomText);
-
-  const el = node as any;
-  const inner = (el.children || [])
-    .map((child: Descendant) => nodeToHtml(child))
-    .join("");
-  const styleAttr = buildStyleAttr(el);
-  const tag = FULL_TAG_MAP[el.type];
-
-  if (tag) return `<${tag}${styleAttr}>${inner}</${tag}>`;
-
-  switch (el.type) {
-    case "code-block":
-      return `<pre${styleAttr}><code>${inner}</code></pre>`;
-    case "table":
-      return `<table${styleAttr}>${inner}</table>`;
-    case "table-row":
-      return `<tr${styleAttr}>${inner}</tr>`;
-    case "table-cell-header":
-      return `<th${styleAttr}>${inner}</th>`;
-    case "table-cell":
-      return (el.isHeader)
-        ? `<th${styleAttr}>${inner}</th>`
-        : `<td${styleAttr}>${inner}</td>`;
-    default:
-      return styleAttr ? `<div${styleAttr}>${inner}</div>` : inner;
-  }
-};
-
+export const leafToHtml = (leaf: CustomText): string => serializeLeaf(leaf);
+export const slateToHtml = (nodes: Descendant[]): string => nodes.map(nodeToHtml).join("");
 export const cellToHtml = (cell: { children?: Descendant[] }): string =>
-  (cell.children || []).map((child: Descendant) => nodeToHtml(child)).join("");
-
+  (cell.children || []).map(nodeToHtml).join("");
 export const cellToHtmlArray = (cell: { children?: Descendant[] }): string[] =>
-  (cell.children || [])
-    .map((child: Descendant) => nodeToHtml(child))
-    .filter((t: string) => t.trim().length > 0);
+  (cell.children || []).map(nodeToHtml).filter((s) => s.trim().length > 0);
 
-// ─── HTML → Slate ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML → SLATE
+// ─────────────────────────────────────────────────────────────────────────────
 
-/** htmlToLeaves: extracts inline marks only (used by parseInlineHtml in BRD builder) */
-export const htmlToLeaves = (html: string): CustomText[] => {
-  if (!html || html.trim() === "") return [{ text: "" }];
-
-  const leaves: CustomText[] = [];
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-
-  const walk = (node: Node, marks: Partial<CustomText>) => {
-    if (node.nodeType === 3) {
-      const text = node.textContent;
-      if (text) leaves.push({ text, ...marks } as CustomText);
-      return;
-    }
-    if (node.nodeType === 1) {
-      const newMarks = { ...marks };
-      const tag = (node as Element).tagName.toLowerCase();
-      if (tag === "strong" || tag === "b") newMarks.bold = true;
-      if (tag === "em" || tag === "i") newMarks.italic = true;
-      if (tag === "u") newMarks.underline = true;
-      if (tag === "code") newMarks.code = true;
-      if (tag === "s") newMarks.strikethrough = true;
-      for (const child of Array.from(node.childNodes)) walk(child, newMarks);
-    }
-  };
-
-  for (const child of Array.from(doc.body.childNodes)) walk(child, {});
-  return leaves.length > 0 ? leaves : [{ text: "" }];
-};
-
-// Full HTML tag → Slate type map (for deserialize)
-const HTML_TAG_TO_SLATE: Record<string, string> = {
+const TAG_TO_SLATE: Record<string, string> = {
+  p: "paragraph",
   h1: "heading-one",
   h2: "heading-two",
   h3: "heading-three",
@@ -165,10 +79,9 @@ const HTML_TAG_TO_SLATE: Record<string, string> = {
   h5: "heading-five",
   h6: "heading-six",
   blockquote: "block-quote",
-  ol: "numbered-list",
   ul: "bulleted-list",
+  ol: "numbered-list",
   li: "list-item",
-  p: "paragraph",
   pre: "code-block",
   table: "table",
   tr: "table-row",
@@ -176,13 +89,16 @@ const HTML_TAG_TO_SLATE: Record<string, string> = {
   th: "table-cell-header",
 };
 
-/** Extract block formatting props from an HTML element's inline styles */
-const extractBlockProps = (el: HTMLElement): Record<string, any> => {
+const INLINE_TAGS = new Set(["strong", "b", "em", "i", "u", "s", "del", "code", "span", "a"]);
+// These block types must have block children (paragraphs), not raw leaves
+const NEEDS_BLOCK_CHILDREN = new Set(["list-item", "table-cell", "table-cell-header"]);
+
+const extractStyle = (el: HTMLElement): Record<string, any> => {
   const props: Record<string, any> = {};
   if (el.style.textAlign) props.align = el.style.textAlign;
   if (el.style.paddingLeft) {
     const px = parseInt(el.style.paddingLeft, 10);
-    if (!isNaN(px)) props.indent = Math.round(px / 24);
+    if (!isNaN(px) && px > 0) props.indent = Math.round(px / 24);
   }
   if (el.style.fontSize) {
     const size = parseInt(el.style.fontSize, 10);
@@ -191,7 +107,19 @@ const extractBlockProps = (el: HTMLElement): Record<string, any> => {
   return props;
 };
 
-const INLINE_TAGS = new Set(["strong", "b", "em", "i", "u", "s", "del", "code", "span"]);
+const wrapLooseLeaves = (nodes: any[]): any[] => {
+  const out: any[] = [];
+  for (const n of nodes) {
+    if ("text" in n) {
+      const last = out[out.length - 1];
+      if (last?.type === "paragraph") last.children.push(n);
+      else out.push({ type: "paragraph", children: [n] });
+    } else {
+      out.push(n);
+    }
+  }
+  return out.length ? out : [{ type: "paragraph", children: [{ text: "" }] }];
+};
 
 const deserialize = (domNode: Node, marks: Partial<CustomText> = {}): any[] => {
   if (domNode.nodeType === 3) {
@@ -204,90 +132,79 @@ const deserialize = (domNode: Node, marks: Partial<CustomText> = {}): any[] => {
   const tag = el.tagName.toLowerCase();
   const newMarks = { ...marks };
 
-  // Accumulate inline marks
   if (tag === "strong" || tag === "b") newMarks.bold = true;
   if (tag === "em" || tag === "i") newMarks.italic = true;
   if (tag === "u") newMarks.underline = true;
   if (tag === "code") newMarks.code = true;
   if (tag === "s" || tag === "del") newMarks.strikethrough = true;
-
-  const blockProps = extractBlockProps(el);
-  const children = Array.from(domNode.childNodes).flatMap((child) =>
-    deserialize(child, newMarks),
-  );
-  const safeChildren = children.length > 0 ? children : [{ text: "", ...newMarks }];
-
   if (tag === "br") return [{ text: "\n", ...newMarks }];
 
-  const slateType = HTML_TAG_TO_SLATE[tag];
+  const styleProps = extractStyle(el);
+  const children = Array.from(domNode.childNodes).flatMap((c) => deserialize(c, newMarks));
+  const safeChildren = children.length ? children : [{ text: "", ...newMarks }];
+  const slateType = TAG_TO_SLATE[tag];
 
   if (slateType) {
-    // list-item and table cells need a paragraph wrapper around their leaf children
-    if (slateType === "list-item" || slateType === "table-cell" || slateType === "table-cell-header") {
-      const wrappedChildren = wrapLeavesInParagraphs(safeChildren);
-      return [{ type: slateType, ...blockProps, children: wrappedChildren }];
-    }
-    return [{ type: slateType, ...blockProps, children: safeChildren }];
+    const finalChildren = NEEDS_BLOCK_CHILDREN.has(slateType)
+      ? wrapLooseLeaves(safeChildren)
+      : safeChildren;
+    return [{ type: slateType, ...styleProps, children: finalChildren }];
   }
 
-  // Inline tags with no block type: return children (with accumulated marks)
   if (INLINE_TAGS.has(tag)) return children;
 
-  // Styled div/span → paragraph
-  if (Object.keys(blockProps).length > 0 && tag !== "body" && tag !== "html") {
-    return [{ type: "paragraph", ...blockProps, children: safeChildren }];
+  if (Object.keys(styleProps).length > 0 && tag !== "body" && tag !== "html") {
+    return [{ type: "paragraph", ...styleProps, children: safeChildren }];
   }
 
   return children;
 };
 
-/** Wrap any raw text leaves among block children into paragraph nodes */
-const wrapLeavesInParagraphs = (nodes: any[]): any[] => {
-  const result: any[] = [];
-  for (const node of nodes) {
-    if (node.text !== undefined) {
-      const last = result[result.length - 1];
-      if (last && last.type === "paragraph") {
-        last.children.push(node);
-      } else {
-        result.push({ type: "paragraph", children: [node] });
-      }
-    } else {
-      result.push(node);
-    }
-  }
-  return result.length > 0 ? result : [{ type: "paragraph", children: [{ text: "" }] }];
-};
-
 export const htmlToSlateNodes = (html: string): Descendant[] => {
-  if (!html || html.trim() === "")
-    return [{ type: "paragraph", children: [{ text: "" }] }];
+  if (!html?.trim()) return [{ type: "paragraph", children: [{ text: "" }] }];
 
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  const fragment = deserialize(doc.body);
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const nodes = deserialize(doc.body);
 
-  // Wrap any top-level loose leaves into paragraphs
-  return fragment.reduce((acc: any[], node) => {
-    if (node.text !== undefined) {
+  return nodes.reduce((acc: any[], n) => {
+    if ("text" in n) {
       const last = acc[acc.length - 1];
-      if (last && last.type === "paragraph") {
-        last.children.push(node);
-      } else {
-        acc.push({ type: "paragraph", children: [node] });
-      }
+      if (last?.type === "paragraph") last.children.push(n);
+      else acc.push({ type: "paragraph", children: [n] });
     } else {
-      acc.push(node);
+      acc.push(n);
     }
     return acc;
   }, []);
 };
 
-export const htmlToCellChildren = (html: string): Descendant[] =>
-  htmlToSlateNodes(html);
+export const htmlToLeaves = (html: string): CustomText[] => {
+  if (!html?.trim()) return [{ text: "" }];
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const leaves: CustomText[] = [];
+  const walk = (node: Node, marks: Partial<CustomText>) => {
+    if (node.nodeType === 3) {
+      const text = node.textContent;
+      if (text) leaves.push({ text, ...marks } as CustomText);
+      return;
+    }
+    if (node.nodeType === 1) {
+      const m = { ...marks };
+      const t = (node as Element).tagName.toLowerCase();
+      if (t === "strong" || t === "b") m.bold = true;
+      if (t === "em" || t === "i") m.italic = true;
+      if (t === "u") m.underline = true;
+      if (t === "code") m.code = true;
+      if (t === "s" || t === "del") m.strikethrough = true;
+      node.childNodes.forEach((c) => walk(c, m));
+    }
+  };
+  doc.body.childNodes.forEach((c) => walk(c, {}));
+  return leaves.length ? leaves : [{ text: "" }];
+};
 
+export const htmlToCellChildren = (html: string): Descendant[] => htmlToSlateNodes(html);
 export const htmlArrayToCellChildren = (arr: string[]): Descendant[] => {
-  if (!arr || arr.length === 0)
-    return [{ type: "paragraph", children: [{ text: "" }] }];
+  if (!arr?.length) return [{ type: "paragraph", children: [{ text: "" }] }];
   return arr.flatMap((item) => htmlToSlateNodes(item));
 };
