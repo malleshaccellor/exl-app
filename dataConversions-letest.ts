@@ -6,11 +6,6 @@ import type { CustomText } from "../types";
 const BLOCK_TAG_MAP: Record<string, string> = {
   "heading-one": "h1",
   "heading-two": "h2",
-  "heading-three": "h3",
-  "heading-four": "h4",
-  "heading-five": "h5",
-  "heading-six": "h6",
-  paragraph: "p",
   "block-quote": "blockquote",
   "numbered-list": "ol",
   "bulleted-list": "ul",
@@ -125,7 +120,7 @@ const serializeNode = (node: Descendant): string => {
 };
 
 export const slateToHtml = (nodes: Descendant[]): string => {
-  return nodes.map((node) => serializeNode(node)).join("");
+  return nodes.map((node) => serializeNode(node)).join("\n");
 };
 
 export const cellToHtml = (cell: { children?: Descendant[] }): string => {
@@ -179,11 +174,6 @@ export const htmlToLeaves = (html: string): CustomText[] => {
 const HTML_TAG_TO_SLATE: Record<string, string> = {
   h1: "heading-one",
   h2: "heading-two",
-  h3: "heading-three",
-  h4: "heading-four",
-  h5: "heading-five",
-  h6: "heading-six",
-  p: "paragraph",
   blockquote: "block-quote",
   ol: "numbered-list",
   ul: "bulleted-list",
@@ -192,10 +182,7 @@ const HTML_TAG_TO_SLATE: Record<string, string> = {
 
 const deserialize = (domNode: Node, marks: Partial<CustomText> = {}): any[] => {
   if (domNode.nodeType === 3) {
-    const text = domNode.textContent || "";
-    // Skip whitespace-only text nodes (e.g. newlines between HTML tags)
-    if (!text.trim()) return [];
-    return [{ text, ...marks }];
+    return [{ text: domNode.textContent || "", ...marks }];
   }
 
   if (domNode.nodeType !== 1) return [];
@@ -220,7 +207,7 @@ const deserialize = (domNode: Node, marks: Partial<CustomText> = {}): any[] => {
   }
   if (el.style.fontSize) {
     const size = parseInt(el.style.fontSize, 10);
-    if (!isNaN(size)) nodeProps.fontSize = String(size);
+    if (!isNaN(size)) nodeProps.fontSize = size;
   }
 
   const children = Array.from(domNode.childNodes)
