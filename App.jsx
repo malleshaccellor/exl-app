@@ -81,12 +81,54 @@ export const createSlateNumberedList = (items: string[]): any => {
   };
 };
 
-/** BRD-specific table builder that parses inline HTML in cell values */
+/**
+ * BRD-specific table builder.
+ *
+ * FIX 1: Array cell values (e.g. Role, Access_Type in Actors/Personas) are now
+ * rendered as a bulleted-list inside the cell instead of multiple paragraphs,
+ * matching the visual structure users expect.
+ *
+ * FIX 2: String cell values go through htmlToSlateNodes (not parseInlineHtml)
+ * so that stored <p style="..."> values correctly restore align/indent/fontSize.
+ * parseInlineHtml only handled inline marks and silently dropped block styles.
+ */
 const createBrdSlateTable = (data: any[]): any => {
   if (!data || data.length === 0)
     return { type: "paragraph", children: [{ text: "" }] };
 
   const headers = Object.keys(data[0]);
+
+  // Build cell children from a value — handles strings, styled HTML, and arrays
+  const buildCellChildren = (val: any): any[] => {
+    if (Array.isArray(val)) {
+      if (val.length === 0) {
+        return [{ type: "paragraph" as const, children: [{ text: "" }] }];
+      }
+      // Render array values as a bulleted list inside the cell
+      return [
+        {
+          type: "bulleted-list" as const,
+          children: val.map((item: string) => ({
+            type: "list-item" as const,
+            children: parseInlineHtml(String(item)),
+          })),
+        },
+      ];
+    }
+
+    const str = String(val || "");
+    if (!str.trim()) {
+      return [{ type: "paragraph" as const, children: [{ text: "" }] }];
+    }
+
+    // Use htmlToSlateNodes so block-level styles (align, indent, fontSize)
+    // stored as <p style="..."> are fully restored. Falls back gracefully
+    // for plain text (htmlToSlateNodes wraps it in a paragraph).
+    const nodes = htmlToSlateNodes(str);
+    return nodes.length > 0
+      ? nodes
+      : [{ type: "paragraph" as const, children: [{ text: str }] }];
+  };
 
   return {
     type: "table" as const,
@@ -106,29 +148,10 @@ const createBrdSlateTable = (data: any[]): any => {
       },
       ...data.map((row) => ({
         type: "table-row" as const,
-        children: headers.map((key) => {
-          const val = row[key];
-          if (Array.isArray(val)) {
-            return {
-              type: "table-cell" as const,
-              children: val.length > 0
-                ? val.map((item: string) => ({
-                    type: "paragraph" as const,
-                    children: parseInlineHtml(String(item)),
-                  }))
-                : [{ type: "paragraph" as const, children: [{ text: "" }] }],
-            };
-          }
-          return {
-            type: "table-cell" as const,
-            children: [
-              {
-                type: "paragraph" as const,
-                children: parseInlineHtml(String(val || "")),
-              },
-            ],
-          };
-        }),
+        children: headers.map((key) => ({
+          type: "table-cell" as const,
+          children: buildCellChildren(row[key]),
+        })),
       })),
     ],
   };
