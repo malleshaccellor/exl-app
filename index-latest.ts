@@ -17,152 +17,157 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   while (i < nodeList.length) {
     const node = nodeList[i];
 
-    if (isHeading(node.type)) {
-      const plainText = getPlainText(node);
-      const normalizedKey = displayNameToKey(plainText);
-      const styledKey = getStyledHtml(node);
-
-      headingsMap[normalizedKey] = plainText;
-
+    if (!isHeading(node.type)) {
       i++;
+      continue;
+    }
 
-      // ===============================
-      // EXECUTIVE SUMMARY
-      // ===============================
-      if (normalizedKey === "Executive_Summary") {
-        const execObj: Record<string, any> = {};
+    // 🔹 Extract heading
+    const headingPlain = getPlainText(node);
+    const normalizedKey = displayNameToKey(headingPlain);
 
-        while (i < nodeList.length && !isHeading(nodeList[i].type)) {
-          const curr = nodeList[i];
+    // Store heading mapping (for _headings)
+    headingsMap[normalizedKey] = headingPlain;
 
-          if (isHeading(curr.type)) break;
+    i++;
 
-          if (curr.type === "paragraph") {
-            execObj[plainText] = serializeBlockNode(curr);
+    // ================================
+    // EXECUTIVE SUMMARY
+    // ================================
+    if (normalizedKey === "Executive_Summary") {
+      const sectionObj: Record<string, any> = {};
+
+      while (i < nodeList.length && !isHeading(nodeList[i].type)) {
+        const curr = nodeList[i];
+
+        if (isHeading(curr.type)) break;
+
+        if (isHeading(curr.type)) {
+          const subPlain = getPlainText(curr);
+          const subKey = displayNameToKey(subPlain);
+          headingsMap[subKey] = subPlain;
+          i++;
+
+          if (nodeList[i]?.type === "paragraph") {
+            sectionObj[subKey] = serializeBlockNode(nodeList[i]);
+            i++;
           }
-
+        } else if (curr.type === "paragraph") {
+          sectionObj["Introduction"] = serializeBlockNode(curr);
+          i++;
+        } else {
           i++;
         }
-
-        result[styledKey] = execObj;
       }
 
-      // ===============================
-      // TABLE SECTIONS
-      // ===============================
-      else if (
-        ["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"]
-          .includes(normalizedKey)
-      ) {
-        let tableData: any[] = [];
+      result[normalizedKey] = sectionObj;
+    }
 
-        while (i < nodeList.length) {
-          const curr = nodeList[i];
+    // ================================
+    // TABLE BASED SECTIONS
+    // ================================
+    else if (
+      ["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"]
+        .includes(normalizedKey)
+    ) {
+      let tableData: any[] = [];
 
-          if (curr.type === "table") {
-            tableData = extractTableAsArray(curr);
-            i++;
-            break;
-          }
+      while (i < nodeList.length) {
+        const curr = nodeList[i];
 
-          if (isHeading(curr.type)) break;
-
+        if (curr.type === "table") {
+          tableData = extractTableAsArray(curr, true); // styled cells
           i++;
+          break;
         }
 
-        result[normalizedKey] = tableData;
+        if (isHeading(curr.type)) break;
+
+        i++;
       }
 
-      // ===============================
-      // GOALS & OBJECTIVES
-      // ===============================
-      else if (normalizedKey === "Goals_and_Objectives") {
-        let listData: string[] = [];
+      result[normalizedKey] = tableData;
+    }
 
-        while (i < nodeList.length) {
-          const curr = nodeList[i];
+    // ================================
+    // GOALS (BULLET LIST)
+    // ================================
+    else if (normalizedKey === "Goals_and_Objectives") {
+      let list: string[] = [];
 
-          if (curr.type === "bulleted-list") {
-            listData = extractBulletedListItems(curr);
-            i++;
-            break;
-          }
+      while (i < nodeList.length) {
+        const curr = nodeList[i];
 
-          if (isHeading(curr.type)) break;
-
+        if (curr.type === "bulleted-list") {
+          list = extractBulletedListItems(curr, true); // styled li
           i++;
+          break;
         }
 
-        result[normalizedKey] = listData;
+        if (isHeading(curr.type)) break;
+
+        i++;
       }
 
-      // ===============================
-      // PROCESS SCOPE SUMMARY
-      // ===============================
-      else if (normalizedKey === "Process_Scope_Summary") {
-        const scopeObj: Record<string, any> = {};
+      result[normalizedKey] = list;
+    }
 
-        while (i < nodeList.length) {
-          const curr = nodeList[i];
+    // ================================
+    // PROCESS SCOPE
+    // ================================
+    else if (normalizedKey === "Process_Scope_Summary") {
+      const scopeObj: Record<string, any> = {};
 
-          if (isHeading(curr.type)) break;
+      while (i < nodeList.length) {
+        const curr = nodeList[i];
 
-          if (isHeading(curr.type)) {
-            const subPlain = getPlainText(curr);
-            const subKey = subPlain.replace(/ /g, "_");
-            headingsMap[subKey] = subPlain;
-            i++;
+        if (isHeading(curr.type)) {
+          const subPlain = getPlainText(curr);
+          const subKey = displayNameToKey(subPlain);
+          headingsMap[subKey] = subPlain;
+          i++;
 
-            const subObj: Record<string, any> = {};
+          const subObj: Record<string, any> = {};
 
-            while (
-              i < nodeList.length &&
-              !isHeading(nodeList[i].type)
-            ) {
-              const item = nodeList[i];
+          while (i < nodeList.length && !isHeading(nodeList[i].type)) {
+            const item = nodeList[i];
 
-              if (item.type === "paragraph") {
-                subObj["Summary"] = serializeBlockNode(item);
-              }
-
-              if (item.type === "bulleted-list") {
-                subObj[
-                  subKey === "In_Scope"
-                    ? "High_Level_Requirements"
-                    : "Exclusions"
-                ] = extractBulletedListItems(item);
-              }
-
-              i++;
+            if (item.type === "paragraph") {
+              subObj["Summary"] = serializeBlockNode(item);
             }
 
-            scopeObj[subKey] = subObj;
+            if (item.type === "bulleted-list") {
+              subObj[
+                subKey === "In_Scope"
+                  ? "High_Level_Requirements"
+                  : "Exclusions"
+              ] = extractBulletedListItems(item, true);
+            }
+
+            i++;
           }
 
-          i++;
+          scopeObj[subKey] = subObj;
+        } else {
+          break;
         }
-
-        result[normalizedKey] = scopeObj;
       }
 
-      // ===============================
-      // DEFAULT SECTION
-      // ===============================
-      else {
-        let content = "";
+      result[normalizedKey] = scopeObj;
+    }
 
-        while (
-          i < nodeList.length &&
-          !isHeading(nodeList[i].type)
-        ) {
-          content += serializeBlockNode(nodeList[i]);
-          i++;
-        }
+    // ================================
+    // DEFAULT SECTION
+    // ================================
+    else {
+      let content = "";
 
-        result[normalizedKey] = content;
+      while (i < nodeList.length && !isHeading(nodeList[i].type)) {
+        content += serializeBlockNode(nodeList[i]);
+        i++;
       }
-    } else {
-      i++;
+
+      result[normalizedKey] = content;
     }
   }
 
