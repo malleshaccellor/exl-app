@@ -380,13 +380,21 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
 };
 
 // ============================================================
-// BRD — internal serialisation helpers
+// BRD — serialisation helpers
 // ============================================================
 
+/**
+ * Serialize a text leaf to HTML inline marks.
+ *
+ * FIX: removed `if (!html) return ""` — this was silently dropping leaves
+ * whose text is an empty string but still carry marks (e.g. a bold empty
+ * placeholder). We now always process marks regardless of text content.
+ */
 const serializeLeafBrd = (node: any): string => {
   if (!node || !("text" in node)) return "";
   let html = node.text as string;
-  if (!html) return "";
+  // FIX: do NOT early-return on empty text — the leaf may still carry marks
+  // that wrap adjacent content, and dropping it silently loses those marks.
   if (node.code)          html = `<code>${html}</code>`;
   if (node.italic)        html = `<em>${html}</em>`;
   if (node.bold)          html = `<strong>${html}</strong>`;
@@ -396,21 +404,64 @@ const serializeLeafBrd = (node: any): string => {
 };
 
 /**
- * Fully block-aware + inline-mark-aware serialiser.
- * Handles fontSize / indent / align on every block type
- * AND bold / italic / underline / code / strikethrough on every leaf.
+ * Apply any inline marks stored directly on a BLOCK node to its inner HTML.
+ *
+ * WHY THIS EXISTS:
+ * Slate normally stores marks (bold/italic/etc.) on text leaf nodes, not on
+ * block nodes. However some editor toolbar implementations (especially when
+ * the user selects an entire heading and applies bold) store the mark as a
+ * prop directly on the block node:
+ *
+ *   { type: "heading-five", bold: true, align: "center",
+ *     children: [{ text: "Executive Summary" }] }   ← text leaf has NO bold
+ *
+ * In this case serializeLeafBrd correctly serialises the leaf as plain text
+ * (no <strong>) and serializeBlockNode never sees bold on children — so the
+ * mark is silently lost.
+ *
+ * Fix: after building `inner` from children, check the block node itself for
+ * mark props and wrap `inner` in the appropriate HTML tags.
+ */
+const applyBlockLevelMarks = (node: any, inner: string): string => {
+  let html = inner;
+  // Apply in reverse nesting order (innermost first matches how browsers render)
+  if (node.strikethrough) html = `<s>${html}</s>`;
+  if (node.underline)     html = `<u>${html}</u>`;
+  if (node.bold)          html = `<strong>${html}</strong>`;
+  if (node.italic)        html = `<em>${html}</em>`;
+  if (node.code)          html = `<code>${html}</code>`;
+  return html;
+};
+
+/**
+ * Fully block-aware + inline-mark-aware serialiser for BRD nodes.
+ *
+ * Correctly handles:
+ *   • fontSize / indent / align as CSS style attrs on every block type
+ *   • bold / italic / underline / code / strikethrough on text leaf children
+ *   • bold / italic / underline etc. stored directly on the block node itself
+ *     (produced by some toolbar implementations when selecting whole headings)
  */
 const serializeBlockNode = (node: any): string => {
+  // ── Text leaf ──────────────────────────────────────────────────────────────
   if ("text" in node) return serializeLeafBrd(node);
 
-  const inner = (node.children || []).map(serializeBlockNode).join("");
+  // ── Recurse into children first ────────────────────────────────────────────
+  let inner = (node.children || []).map(serializeBlockNode).join("");
 
+  // ── FIX: apply any inline marks stored on the block node itself ────────────
+  // This covers the case where an editor toolbar applies bold/italic to a
+  // heading block node directly rather than to each child text leaf.
+  inner = applyBlockLevelMarks(node, inner);
+
+  // ── Build CSS style attribute ──────────────────────────────────────────────
   const styleProps: string[] = [];
   if (node.fontSize)                       styleProps.push(`font-size:${node.fontSize}px`);
   if (node.indent)                         styleProps.push(`padding-left:${node.indent * 24}px`);
   if (node.align && node.align !== "left") styleProps.push(`text-align:${node.align}`);
   const s = styleProps.length ? ` style="${styleProps.join(";")}"` : "";
 
+  // ── Emit the correct HTML tag ──────────────────────────────────────────────
   switch (node.type) {
     case "heading-one":   return `<h1${s}>${inner}</h1>`;
     case "heading-two":   return `<h2${s}>${inner}</h2>`;
@@ -426,7 +477,7 @@ const serializeBlockNode = (node: any): string => {
   }
 };
 
-/** Plain text extraction — used ONLY for section-key detection, never for display. */
+/** Plain text extraction — ONLY for section-key detection, never for display. */
 const childrenToText = (children: any[]): string =>
   (children || []).map((c: any) =>
     "text" in c ? c.text || "" : childrenToText(c.children)).join("");
@@ -482,28 +533,21 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
   let cleanRaw: any = typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
 
   if (typeof cleanRaw === "string") {
-    // Strip wrapping quotes
     if (cleanRaw.startsWith('"') && cleanRaw.endsWith('"')) {
       try { cleanRaw = JSON.parse(cleanRaw); } catch { /* use as-is */ }
     }
-    // Replace escaped newlines
     if (typeof cleanRaw === "string" && cleanRaw.includes("\\n"))
       cleanRaw = cleanRaw.replace(/\\n/g, "\n");
-    // If raw HTML
     if (typeof cleanRaw === "string" && /^<[a-z][\s\S]*>/i.test(cleanRaw.trim()))
       return htmlToSlateNodes(cleanRaw);
   }
 
-  // Parse JSON / strip ```json fences
   const parsed = parseAgentResponse(cleanRaw);
 
-  // parsed may be:
-  //   (a) the full BRD object  { Executive_Summary: {...}, _headings: {...}, ... }
-  //   (b) a wrapper object     { response: "```json\n{...}\n```" }
-  // Handle (b) by unwrapping
+  // If caller passed the slateToBrdJson wrapper { response: "```json...```" }
+  // instead of the inner JSON object, unwrap it so _headings is accessible.
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
-      typeof parsed.response === "string" &&
-      Object.keys(parsed).length === 1) {
+      typeof parsed.response === "string" && Object.keys(parsed).length === 1) {
     try {
       const inner = parseAgentResponse(parsed.response);
       return transformBRDDataToSlate(inner);
@@ -517,30 +561,6 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
 // BRD — slateToBrdJson
 // ============================================================
 
-/**
- * HOW HEADING STYLES ARE PERSISTED
- * ─────────────────────────────────
- * The JSON uses heading plain-text as the key ("Executive_Summary" etc.)
- * so there is no natural place to store bold / italic / fontSize / indent /
- * align applied to the heading node itself.
- *
- * Solution: a `_headings` sibling key that maps every section key to the
- * full serialised HTML of its heading node:
- *
- *   "_headings": {
- *     "Executive_Summary": "<h5 style='font-size:20px'><strong>Executive Summary</strong></h5>",
- *     "Introduction":      "<h5 style='text-align:center'><em>Introduction</em></h5>",
- *     ...
- *   }
- *
- * On load, transformBRDDataToSlate (index.ts) reads this map and passes the
- * HTML to makeHeadingFive() which deserialises it back to a full Slate node —
- * restoring every style the user applied.
- *
- * IMPORTANT: `_headings` is stored at the TOP LEVEL of result so it is
- * preserved inside the JSON string that slateToBrdJson returns, and is
- * available to brdToSlateValue / transformBRDDataToSlate on reload.
- */
 export const slateToBrdJson = (nodes: Descendant[]): any => {
   const result:   Record<string, any>    = {};
   const headings: Record<string, string> = {};
@@ -565,14 +585,15 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   while (i < nodeList.length) {
     const node = nodeList[i];
 
-    // ── heading-five ──────────────────────────────────────────────────────
     if (node.type === "heading-five") {
       const plainText  = childrenToText(node.children);
       const sectionKey = displayNameToKey(plainText);
 
-      // Serialise the entire heading node to HTML — this captures:
-      //   • block-level styles: fontSize, indent, align (via style="…")
-      //   • inline marks on children: bold, italic, underline, etc.
+      // Serialize the full heading node to HTML.
+      // serializeBlockNode now handles BOTH:
+      //   • block-level style props (fontSize, indent, align) → style="…"
+      //   • inline marks on children (bold/italic on text leaves)
+      //   • inline marks stored on the block node itself (bold:true on heading)
       headings[sectionKey] = serializeBlockNode(node);
       i++;
 
@@ -589,7 +610,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
           if (curr.type === "heading-five") {
             const subPlain = childrenToText(curr.children);
             const subKey   = subPlain.replace(/ /g, "_");
-            headings[subKey] = serializeBlockNode(curr);   // ← save sub-heading styles
+            headings[subKey] = serializeBlockNode(curr);
             i++;
 
             let content = "";
@@ -652,7 +673,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
           if (curr.type === "heading-five") {
             const subPlain = childrenToText(curr.children);
             const subKey   = subPlain.replace(/ /g, "_");
-            headings[subKey] = serializeBlockNode(curr);   // ← save sub-heading styles
+            headings[subKey] = serializeBlockNode(curr);
             i++;
 
             const subObj: Record<string, any> = {};
@@ -685,7 +706,6 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       }
     }
 
-    // ── heading-one (metadata) ───────────────────────────────────────────
     else if (node.type === "heading-one") {
       const key = childrenToText(node.children).replace(/ /g, "_");
       i++;
@@ -700,7 +720,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
     }
   }
 
-  // Always include _headings so transformBRDDataToSlate can restore styles
+  // Always include _headings so transformBRDDataToSlate can restore styles on reload
   result["_headings"] = headings;
 
   return {
