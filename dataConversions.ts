@@ -23,14 +23,14 @@ export const parseAgentResponse = (raw: unknown): any => {
 // ============================================================
 
 const TC_VISIBLE_COLUMNS = [
-  { key: "req_id", label: "Req ID" },
-  { key: "userstory_id", label: "User Story ID" },
-  { key: "TestCaseId", label: "Test Case ID" },
-  { key: "TestCaseTitle", label: "Test Case Title" },
-  { key: "Description", label: "Description" },
-  { key: "Preconditions", label: "Preconditions" },
-  { key: "TestData", label: "Test Data" },
-  { key: "TestSteps", label: "Test Steps" },
+  { key: "req_id",          label: "Req ID" },
+  { key: "userstory_id",    label: "User Story ID" },
+  { key: "TestCaseId",      label: "Test Case ID" },
+  { key: "TestCaseTitle",   label: "Test Case Title" },
+  { key: "Description",     label: "Description" },
+  { key: "Preconditions",   label: "Preconditions" },
+  { key: "TestData",        label: "Test Data" },
+  { key: "TestSteps",       label: "Test Steps" },
   { key: "ExpectedResults", label: "Expected Results" },
 ];
 
@@ -43,25 +43,19 @@ export const testCasesToSlateValue = (data: any): Descendant[] => {
         for (const tc of act.TestCases || []) {
           const hiddenData: Record<string, string> = {
             AcceptanceCriterion: act.AcceptanceCriterion || "",
-            ActualResults: tc.ActualResults || "",
-            PassFail: tc.PassFail || "",
+            ActualResults:       tc.ActualResults        || "",
+            PassFail:            tc.PassFail             || "",
           };
 
           const rowData: Record<string, any> = {
-            req_id: req.req_id,
-            userstory_id: story.userstory_id,
-            TestCaseId: tc.TestCaseId,
-            TestCaseTitle: tc.TestCaseTitle,
-            Description: tc.Description,
-            Preconditions: Array.isArray(tc.Preconditions)
-              ? tc.Preconditions
-              : [String(tc.Preconditions || "")],
-            TestData: Array.isArray(tc.TestData)
-              ? tc.TestData
-              : [String(tc.TestData || "")],
-            TestSteps: Array.isArray(tc.TestSteps)
-              ? tc.TestSteps
-              : [String(tc.TestSteps || "")],
+            req_id:          req.req_id,
+            userstory_id:    story.userstory_id,
+            TestCaseId:      tc.TestCaseId,
+            TestCaseTitle:   tc.TestCaseTitle,
+            Description:     tc.Description,
+            Preconditions:   Array.isArray(tc.Preconditions)   ? tc.Preconditions   : [String(tc.Preconditions   || "")],
+            TestData:        Array.isArray(tc.TestData)        ? tc.TestData        : [String(tc.TestData        || "")],
+            TestSteps:       Array.isArray(tc.TestSteps)       ? tc.TestSteps       : [String(tc.TestSteps       || "")],
             ExpectedResults: tc.ExpectedResults,
           };
 
@@ -70,16 +64,12 @@ export const testCasesToSlateValue = (data: any): Descendant[] => {
             hiddenData,
             children: TC_VISIBLE_COLUMNS.map(({ key }) => {
               const val = rowData[key];
-
               if (Array.isArray(val)) {
                 return {
                   type: "table-cell",
-                  children: val.flatMap((item: string) => {
-                    return htmlToCellChildren(String(item || ""));
-                  }),
+                  children: val.flatMap((item: string) => htmlToCellChildren(String(item || ""))),
                 };
               }
-
               return {
                 type: "table-cell",
                 children: htmlToCellChildren(val != null ? String(val) : ""),
@@ -121,15 +111,13 @@ export const slateToTestCasesJson = (nodes: Descendant[]): any => {
   const reqMap: Record<string, any> = {};
 
   for (const row of dataRows) {
-    const cells = row.children;
+    const cells  = row.children;
     const hidden = row.hiddenData || {};
 
-    const reqId = cellToHtml(cells[0]).trim();
+    const reqId      = cellToHtml(cells[0]).trim();
     const userstoryId = cellToHtml(cells[1]).trim();
 
-    if (!reqMap[reqId]) {
-      reqMap[reqId] = { req_id: reqId, UserStories: {} };
-    }
+    if (!reqMap[reqId]) reqMap[reqId] = { req_id: reqId, UserStories: {} };
     if (!reqMap[reqId].UserStories[userstoryId]) {
       reqMap[reqId].UserStories[userstoryId] = {
         userstory_id: userstoryId,
@@ -138,7 +126,7 @@ export const slateToTestCasesJson = (nodes: Descendant[]): any => {
     }
 
     const criterion = hidden.AcceptanceCriterion || "";
-    const storyObj = reqMap[reqId].UserStories[userstoryId];
+    const storyObj  = reqMap[reqId].UserStories[userstoryId];
     if (!storyObj.AcceptanceCriteriaTests[criterion]) {
       storyObj.AcceptanceCriteriaTests[criterion] = {
         AcceptanceCriterion: criterion,
@@ -147,24 +135,15 @@ export const slateToTestCasesJson = (nodes: Descendant[]): any => {
     }
 
     storyObj.AcceptanceCriteriaTests[criterion].TestCases.push({
-      TestCaseId: cellToHtml(cells[2]).trim(),
-      TestCaseTitle: cellToHtml(cells[3]).trim(),
-      Description: cellToHtml(cells[4]).trim(),
-      Preconditions: cellToHtml(cells[5])
-        .split("\n")
-        .map((s: string) => s.trim())
-        .filter(Boolean),
-      TestData: cellToHtml(cells[6])
-        .split("\n")
-        .map((s: string) => s.trim())
-        .filter(Boolean),
-      TestSteps: cellToHtml(cells[7])
-        .split("\n")
-        .map((s: string) => s.trim())
-        .filter(Boolean),
+      TestCaseId:      cellToHtml(cells[2]).trim(),
+      TestCaseTitle:   cellToHtml(cells[3]).trim(),
+      Description:     cellToHtml(cells[4]).trim(),
+      Preconditions:   cellToHtml(cells[5]).split("\n").map((s: string) => s.trim()).filter(Boolean),
+      TestData:        cellToHtml(cells[6]).split("\n").map((s: string) => s.trim()).filter(Boolean),
+      TestSteps:       cellToHtml(cells[7]).split("\n").map((s: string) => s.trim()).filter(Boolean),
       ExpectedResults: cellToHtml(cells[8]).trim(),
-      ActualResults: hidden.ActualResults || "",
-      PassFail: hidden.PassFail || "",
+      ActualResults:   hidden.ActualResults || "",
+      PassFail:        hidden.PassFail      || "",
     });
   }
 
@@ -185,13 +164,13 @@ export const slateToTestCasesJson = (nodes: Descendant[]): any => {
 
 const AL_COLUMNS = [
   { key: "Action_Item", label: "Action Item" },
-  { key: "Requestor", label: "Requestor" },
-  { key: "Owner", label: "Owner" },
-  { key: "Status", label: "Status" },
-  { key: "Priority", label: "Priority" },
-  { key: "Start_Date", label: "Start Date" },
-  { key: "Due_Date", label: "Due Date" },
-  { key: "Comments", label: "Comments" },
+  { key: "Requestor",   label: "Requestor" },
+  { key: "Owner",       label: "Owner" },
+  { key: "Status",      label: "Status" },
+  { key: "Priority",    label: "Priority" },
+  { key: "Start_Date",  label: "Start Date" },
+  { key: "Due_Date",    label: "Due Date" },
+  { key: "Comments",    label: "Comments" },
 ];
 
 export const actionLogToSlateValue = (data: any): Descendant[] => {
@@ -231,8 +210,7 @@ export const slateToActionLogJson = (nodes: Descendant[]): any => {
   if (!tableNode) return { Minutes_of_Meeting: [] };
 
   const dataRows = tableNode.children.slice(1);
-
-  const minutes = dataRows.map((row: any) => {
+  const minutes  = dataRows.map((row: any) => {
     const result: Record<string, string> = {};
     AL_COLUMNS.forEach(({ key }, i) => {
       result[key] = cellToHtml(row.children[i]).trim();
@@ -254,11 +232,7 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
 
   let cleanText = text.trim();
   if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
-    try {
-      cleanText = JSON.parse(cleanText);
-    } catch {
-      // not valid JSON, use as-is
-    }
+    try { cleanText = JSON.parse(cleanText); } catch { /* use as-is */ }
   }
   if (cleanText.includes("\\n")) {
     cleanText = cleanText.replace(/\\n/g, "\n");
@@ -267,63 +241,55 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
     return htmlToSlateNodes(cleanText);
   }
 
-  const lines = cleanText.split("\n");
+  const lines: string[]     = cleanText.split("\n");
   const nodes: Descendant[] = [];
-  let currentListItems: Descendant[] = [];
+  let currentListItems: Descendant[]          = [];
   let currentListType: "bulleted-list" | null = null;
 
   const flushList = () => {
     if (currentListItems.length > 0 && currentListType) {
-      nodes.push({
-        type: currentListType,
-        children: currentListItems as any,
-      });
+      nodes.push({ type: currentListType, children: currentListItems as any });
       currentListItems = [];
-      currentListType = null;
+      currentListType  = null;
     }
   };
 
   const parseInlineMarks = (text: string): CustomText[] => {
-    const boldItalicRegex = /\*\*\*(.+?)\*\*\*/g;
-    const boldRegex = /\*\*(.+?)\*\*/g;
-    const italicRegex = /[\*_](.+?)[\*_]/g;
+    const boldItalicRegex    = /\*\*\*(.+?)\*\*\*/g;
+    const boldRegex          = /\*\*(.+?)\*\*/g;
+    const italicRegex        = /[\*_](.+?)[\*_]/g;
     const strikethroughRegex = /~~(.+?)~~/g;
-    const underlineRegex = /<u>(.+?)<\/u>/gi;
-    const codeRegex = /`(.+?)`/g;
+    const underlineRegex     = /<u>(.+?)<\/u>/gi;
+    const codeRegex          = /`(.+?)`/g;
 
     let parts: CustomText[] = [{ text }];
 
     const applyRegex = (regex: RegExp, prop: keyof CustomText) => {
       const newParts: CustomText[] = [];
       parts.forEach((part) => {
-        if (Object.keys(part).length > 1) {
-          newParts.push(part);
-          return;
-        }
+        if (Object.keys(part).length > 1) { newParts.push(part); return; }
         let lastIndex = 0;
         let match;
         const partText = part.text;
         regex.lastIndex = 0;
         while ((match = regex.exec(partText)) !== null) {
-          if (match.index > lastIndex) {
+          if (match.index > lastIndex)
             newParts.push({ text: partText.slice(lastIndex, match.index) });
-          }
           newParts.push({ text: match[1], [prop]: true } as any);
           lastIndex = regex.lastIndex;
         }
-        if (lastIndex < partText.length) {
+        if (lastIndex < partText.length)
           newParts.push({ text: partText.slice(lastIndex) });
-        }
       });
       parts = newParts;
     };
 
-    applyRegex(boldItalicRegex, "bold");
-    applyRegex(boldRegex, "bold");
-    applyRegex(italicRegex, "italic");
+    applyRegex(boldItalicRegex,    "bold");
+    applyRegex(boldRegex,          "bold");
+    applyRegex(italicRegex,        "italic");
     applyRegex(strikethroughRegex, "strikethrough");
-    applyRegex(underlineRegex, "underline");
-    applyRegex(codeRegex, "code");
+    applyRegex(underlineRegex,     "underline");
+    applyRegex(codeRegex,          "code");
 
     return parts.length > 0 ? parts : [{ text: "" }];
   };
@@ -331,18 +297,12 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
   for (const line of lines) {
     const trimmed = line.trim();
 
-    if (trimmed === "") {
-      flushList();
-      continue;
-    }
+    if (trimmed === "") { flushList(); continue; }
 
     const numberedHeadingMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*\s*$/);
     if (numberedHeadingMatch) {
       flushList();
-      nodes.push({
-        type: "heading-five",
-        children: [{ text: numberedHeadingMatch[1] }],
-      });
+      nodes.push({ type: "heading-five", children: [{ text: numberedHeadingMatch[1] }] });
       continue;
     }
 
@@ -354,41 +314,24 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       subHeadingMatch[1].split(/\s+/).length <= 6
     ) {
       flushList();
-      nodes.push({
-        type: "paragraph",
-        children: [{ text: subHeadingMatch[1], bold: true }],
-      });
+      nodes.push({ type: "paragraph", children: [{ text: subHeadingMatch[1], bold: true }] });
       continue;
     }
 
     const bulletMatch = line.match(/^(\s*)([-*])\s+(.+)$/);
     if (bulletMatch) {
-      const leadingSpaces = bulletMatch[1].length;
-      const indent = leadingSpaces >= 4 ? 1 : 0;
-      if (currentListType !== "bulleted-list") {
-        flushList();
-        currentListType = "bulleted-list";
-      }
-      currentListItems.push({
-        type: "list-item",
-        indent,
-        children: parseInlineMarks(bulletMatch[3]),
-      } as any);
+      const indent = bulletMatch[1].length >= 4 ? 1 : 0;
+      if (currentListType !== "bulleted-list") { flushList(); currentListType = "bulleted-list"; }
+      currentListItems.push({ type: "list-item", indent, children: parseInlineMarks(bulletMatch[3]) } as any);
       continue;
     }
 
     flushList();
-    nodes.push({
-      type: "paragraph",
-      children: parseInlineMarks(trimmed),
-    });
+    nodes.push({ type: "paragraph", children: parseInlineMarks(trimmed) });
   }
 
   flushList();
-
-  return nodes.length > 0
-    ? nodes
-    : [{ type: "paragraph", children: [{ text: "" }] }];
+  return nodes.length > 0 ? nodes : [{ type: "paragraph", children: [{ text: "" }] }];
 };
 
 // ---- Helpers: Slate → Markdown ----
@@ -397,82 +340,64 @@ const leafToMarkdown = (node: any): string => {
   if (!node || !("text" in node)) return "";
   let text = node.text as string;
   if (!text) return "";
-  if (node.code) text = `\`${text}\``;
-  if (node.bold) text = `**${text}**`;
-  if (node.italic) text = `*${text}*`;
-  if (node.underline) text = `<u>${text}</u>`;
+  if (node.code)          text = `\`${text}\``;
+  if (node.bold)          text = `**${text}**`;
+  if (node.italic)        text = `*${text}*`;
+  if (node.underline)     text = `<u>${text}</u>`;
   if (node.strikethrough) text = `~~${text}~~`;
   return text;
 };
 
-const childrenToMarkdown = (children: any[]): string => {
-  return (children || [])
-    .map((c: any) => {
-      if ("text" in c) return leafToMarkdown(c);
-      return childrenToMarkdown(c.children);
-    })
-    .join("");
-};
+const childrenToMarkdown = (children: any[]): string =>
+  (children || []).map((c: any) => ("text" in c ? leafToMarkdown(c) : childrenToMarkdown(c.children))).join("");
 
 export const slateToSummaryJson = (nodes: Descendant[]): any => {
-  const lines: string[] = [];
+  const lines: string[]     = [];
   let headingCounter = 0;
   let prevType: string | null = null;
 
   for (const node of nodes as any[]) {
-    const nodeType = (node as any).type;
+    const nodeType = node.type;
 
     if (prevType && lines.length > 0) {
       const isHeadingToList =
         prevType === "heading-five" &&
         (nodeType === "bulleted-list" || nodeType === "numbered-list");
-      if (!isHeadingToList) {
-        lines.push("");
-      }
+      if (!isHeadingToList) lines.push("");
     }
 
     switch (nodeType) {
       case "heading-five": {
         headingCounter++;
-        const text = childrenToMarkdown(node.children);
-        lines.push(`${headingCounter}. **${text}**`);
+        lines.push(`${headingCounter}. **${childrenToMarkdown(node.children)}**`);
         break;
       }
       case "paragraph": {
         const children = node.children || [];
         if (
-          children.length === 1 &&
-          children[0].bold &&
-          !children[0].italic &&
-          !children[0].strikethrough &&
-          !children[0].underline &&
-          !children[0].code &&
-          children[0].text &&
-          children[0].text.split(/\s+/).length <= 6
+          children.length === 1 && children[0].bold &&
+          !children[0].italic && !children[0].strikethrough &&
+          !children[0].underline && !children[0].code &&
+          children[0].text && children[0].text.split(/\s+/).length <= 6
         ) {
           lines.push(`${children[0].text}:`);
         } else {
-          const text = childrenToMarkdown(children);
-          lines.push(text);
+          lines.push(childrenToMarkdown(children));
         }
         break;
       }
       case "bulleted-list": {
         for (const item of node.children || []) {
-          const text = childrenToMarkdown(item.children);
           const indent = (item as any).indent || 0;
-          if (indent >= 1) {
-            lines.push(`     * ${text}`);
-          } else {
-            lines.push(`   - ${text}`);
-          }
+          lines.push(indent >= 1
+            ? `     * ${childrenToMarkdown(item.children)}`
+            : `   - ${childrenToMarkdown(item.children)}`);
         }
         break;
       }
       case "numbered-list": {
         (node.children || []).forEach((item: any, i: number) => {
-          const text = childrenToMarkdown(item.children);
-          lines.push(`${i + 1}. ${text}`);
+          lines.push(`${i + 1}. ${childrenToMarkdown(item.children)}`);
         });
         break;
       }
@@ -490,53 +415,66 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
 };
 
 // ============================================================
-// BRD — shared serialisation helpers (Slate → HTML)
+// BRD — shared serialisation helpers  (Slate → HTML)
 // ============================================================
 
-// FIX: was a flat inline-only serialiser that dropped fontSize / indent /
-// align from block nodes.  Now emits proper CSS style attributes so every
-// property round-trips correctly.
+// FIX: serializeBlockNode must handle BOTH:
+//   1. Block-level style props (fontSize, indent, align) on the node itself
+//   2. Inline marks (bold, italic, underline, etc.) on text-leaf children
+//
+// Previously it used a simple leafToInlineHtml that only emitted inline marks
+// but dropped block-style props on headings when those headings also had styled
+// children. The unified approach below handles both in the same recursion.
 
-const leafToInlineHtml = (node: any): string => {
+const serializeLeafBrd = (node: any): string => {
   if (!node || !("text" in node)) return "";
   let html = node.text as string;
   if (!html) return "";
-  if (node.code) html = `<code>${html}</code>`;
-  if (node.italic) html = `<em>${html}</em>`;
-  if (node.bold) html = `<strong>${html}</strong>`;
-  if (node.underline) html = `<u>${html}</u>`;
+  if (node.code)          html = `<code>${html}</code>`;
+  if (node.italic)        html = `<em>${html}</em>`;
+  if (node.bold)          html = `<strong>${html}</strong>`;
+  if (node.underline)     html = `<u>${html}</u>`;
   if (node.strikethrough) html = `<s>${html}</s>`;
   return html;
 };
 
-// Block-aware serialiser: emits style attributes for fontSize / indent / align
-// and wraps block types in the appropriate HTML tag.
+/**
+ * Block-aware serialiser used by slateToBrdJson.
+ *
+ * Emits:
+ *  • Inline marks (bold/italic/underline/code/strikethrough) on text leaves
+ *  • Block-level style attributes (font-size, padding-left, text-align) on
+ *    every block node — including headings (h1–h6), paragraphs, and list items
+ *  • The correct semantic HTML tag for every known Slate block type
+ */
 const serializeBlockNode = (node: any): string => {
-  if ("text" in node) return leafToInlineHtml(node);
+  // Text leaf — inline marks only
+  if ("text" in node) return serializeLeafBrd(node);
 
+  // Recurse first
   const inner = (node.children || []).map(serializeBlockNode).join("");
 
+  // Block-level style props
   const styleProps: string[] = [];
-  if (node.fontSize) styleProps.push(`font-size:${node.fontSize}px`);
-  if (node.indent)   styleProps.push(`padding-left:${node.indent * 24}px`);
+  if (node.fontSize)                      styleProps.push(`font-size:${node.fontSize}px`);
+  if (node.indent)                        styleProps.push(`padding-left:${node.indent * 24}px`);
   if (node.align && node.align !== "left") styleProps.push(`text-align:${node.align}`);
   const styleAttr = styleProps.length ? ` style="${styleProps.join(";")}"` : "";
 
   switch (node.type) {
-    case "paragraph":
-      return styleAttr ? `<p${styleAttr}>${inner}</p>` : inner;
-    case "bulleted-list":
-      return `<ul${styleAttr}>${inner}</ul>`;
-    case "numbered-list":
-      return `<ol${styleAttr}>${inner}</ol>`;
-    case "list-item":
-      return `<li${styleAttr}>${inner}</li>`;
+    // FIX: all heading levels are explicitly handled here so that a heading
+    // like { type:"heading-five", fontSize:20, children:[{text:"Intro",bold:true}] }
+    // correctly serialises to <h5 style="font-size:20px"><strong>Intro</strong></h5>
     case "heading-one":   return `<h1${styleAttr}>${inner}</h1>`;
     case "heading-two":   return `<h2${styleAttr}>${inner}</h2>`;
     case "heading-three": return `<h3${styleAttr}>${inner}</h3>`;
     case "heading-four":  return `<h4${styleAttr}>${inner}</h4>`;
     case "heading-five":  return `<h5${styleAttr}>${inner}</h5>`;
     case "heading-six":   return `<h6${styleAttr}>${inner}</h6>`;
+    case "paragraph":     return styleAttr ? `<p${styleAttr}>${inner}</p>` : inner;
+    case "bulleted-list": return `<ul${styleAttr}>${inner}</ul>`;
+    case "numbered-list": return `<ol${styleAttr}>${inner}</ol>`;
+    case "list-item":     return `<li${styleAttr}>${inner}</li>`;
     default:
       return styleAttr ? `<span${styleAttr}>${inner}</span>` : inner;
   }
@@ -550,22 +488,28 @@ const childrenToText = (children: any[]): string =>
     .map((c: any) => ("text" in c ? c.text || "" : childrenToText(c.children)))
     .join("");
 
-// FIX: serialise entire list-item node (preserving indent/align) then strip
-// the outer <li> wrapper so only the content string ends up in the JSON array.
+/**
+ * Serialize a bulleted-list node's items to an array of HTML strings.
+ * FIX: serialises the whole list-item node (capturing indent/align) then
+ * strips the outer <li> wrapper, so item-level styles survive to JSON.
+ */
 const extractBulletedListItems = (listNode: any): string[] =>
   (listNode.children || []).map((item: any) => {
     const full = serializeBlockNode(item);
+    // Strip <li …>…</li> wrapper — only the content goes into the JSON array
     return full.replace(/^<li[^>]*>([\s\S]*)<\/li>$/, "$1") || full;
   });
 
-// FIX: use serializeBlockNode per paragraph so <p style="font-size:…"> is
-// emitted when block-level styles are present.
+/**
+ * Serialize a table node to an array of row objects.
+ * FIX: uses serializeBlockNode per paragraph/cell so block-level styles
+ * (fontSize, indent, align) are emitted as <p style="…"> in the JSON values.
+ */
 const extractTableAsArray = (tableNode: any): any[] => {
   const rows = tableNode.children || [];
   if (rows.length < 2) return [];
 
-  const headerCells = rows[0].children || [];
-  const headers = headerCells.map((cell: any) =>
+  const headers = (rows[0].children || []).map((cell: any) =>
     childrenToText(cell.children).replace(/ /g, "_"),
   );
 
@@ -573,9 +517,7 @@ const extractTableAsArray = (tableNode: any): any[] => {
     const obj: Record<string, any> = {};
     (row.children || []).forEach((cell: any, i: number) => {
       if (i >= headers.length) return;
-      const paragraphs = (cell.children || []).filter(
-        (c: any) => c.type === "paragraph",
-      );
+      const paragraphs = (cell.children || []).filter((c: any) => c.type === "paragraph");
       if (paragraphs.length > 1) {
         obj[headers[i]] = paragraphs.map((p: any) => serializeBlockNode(p));
       } else {
@@ -591,23 +533,15 @@ const extractTableAsArray = (tableNode: any): any[] => {
 // ============================================================
 
 export const brdToSlateValue = (rawResponse: string): Descendant[] => {
-  let cleanRaw =
-    typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
+  let cleanRaw = typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
   if (typeof cleanRaw === "string") {
     if (cleanRaw.startsWith('"') && cleanRaw.endsWith('"')) {
-      try {
-        cleanRaw = JSON.parse(cleanRaw);
-      } catch {
-        // not valid JSON string, use as-is
-      }
+      try { cleanRaw = JSON.parse(cleanRaw); } catch { /* use as-is */ }
     }
     if (typeof cleanRaw === "string" && cleanRaw.includes("\\n")) {
       cleanRaw = cleanRaw.replace(/\\n/g, "\n");
     }
-    if (
-      typeof cleanRaw === "string" &&
-      /^<[a-z][\s\S]*>/i.test(cleanRaw.trim())
-    ) {
+    if (typeof cleanRaw === "string" && /^<[a-z][\s\S]*>/i.test(cleanRaw.trim())) {
       return htmlToSlateNodes(cleanRaw);
     }
   }
@@ -620,13 +554,13 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
 // ============================================================
 
 const BRD_SECTION_DISPLAY_TO_KEY: Record<string, string> = {
-  "Executive Summary": "Executive_Summary",
-  "Stakeholders & Key Personnel": "Stakeholders_and_Key_Personnel",
-  "Goals & objectives": "Goals_and_Objectives",
-  "Goals & Objectives": "Goals_and_Objectives",
-  "Process Scope Summary": "Process_Scope_Summary",
-  "Actors/Personas": "Actors_Personas",
-  Glossary: "Glossary",
+  "Executive Summary":              "Executive_Summary",
+  "Stakeholders & Key Personnel":   "Stakeholders_and_Key_Personnel",
+  "Goals & objectives":             "Goals_and_Objectives",
+  "Goals & Objectives":             "Goals_and_Objectives",
+  "Process Scope Summary":          "Process_Scope_Summary",
+  "Actors/Personas":                "Actors_Personas",
+  "Glossary":                       "Glossary",
 };
 
 const displayNameToKey = (name: string): string =>
@@ -647,18 +581,14 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   ];
 
   const safeCall = (fn: any, arg: any, fallback: any = []) => {
-    try {
-      return typeof fn === "function" ? fn(arg) : fallback;
-    } catch (err) {
-      console.error("Parser Error:", err);
-      return fallback;
-    }
+    try { return typeof fn === "function" ? fn(arg) : fallback; }
+    catch (err) { console.error("Parser Error:", err); return fallback; }
   };
 
   while (i < nodeList.length) {
     const node = nodeList[i];
 
-    // ── heading-five (BRD sections) ────────────────────────────────────────
+    // ── heading-five (BRD sections) ─────────────────────────────────────────
     if (node.type === "heading-five") {
       const sectionKey = displayNameToKey(childrenToText(node.children));
       i++;
@@ -667,14 +597,12 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       if (sectionKey === "Executive_Summary") {
         const execSummary: Record<string, string> = {};
         while (i < nodeList.length) {
-          const curr = nodeList[i];
+          const curr    = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
           if (
             curr.type === "heading-one" ||
-            (curr.type === "heading-five" &&
-              TOP_LEVEL_SECTIONS.includes(currKey))
-          )
-            break;
+            (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))
+          ) break;
 
           if (curr.type === "heading-five") {
             const subKey = childrenToText(curr.children).replace(/ /g, "_");
@@ -684,7 +612,8 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
               i < nodeList.length &&
               !["heading-five", "heading-one"].includes(nodeList[i].type)
             ) {
-              // FIX: block-aware so fontSize / align / indent survive
+              // FIX: serializeBlockNode preserves fontSize/align/indent AND
+              // inline marks (bold/italic) on the content paragraphs
               content += serializeBlockNode(nodeList[i]);
               i++;
             }
@@ -697,55 +626,39 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       }
 
       /** 2. TABLE SECTIONS */
-      else if (
-        [
-          "Stakeholders_and_Key_Personnel",
-          "Actors_Personas",
-          "Glossary",
-        ].includes(sectionKey)
-      ) {
+      else if (["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"].includes(sectionKey)) {
         let tableData: any[] = [];
         while (i < nodeList.length) {
-          const curr = nodeList[i];
+          const curr    = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
           if (
             curr.type === "heading-one" ||
-            (curr.type === "heading-five" &&
-              TOP_LEVEL_SECTIONS.includes(currKey))
-          )
-            break;
-
+            (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))
+          ) break;
           if (curr.type === "table") {
             tableData = safeCall(extractTableAsArray, curr, []);
             i++;
             break;
-          } else {
-            i++;
-          }
+          } else { i++; }
         }
         result[sectionKey] = tableData;
       }
 
-      /** 3. LIST SECTIONS */
+      /** 3. GOALS & OBJECTIVES */
       else if (sectionKey === "Goals_and_Objectives") {
         let listData: any[] = [];
         while (i < nodeList.length) {
-          const curr = nodeList[i];
+          const curr    = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
           if (
             curr.type === "heading-one" ||
-            (curr.type === "heading-five" &&
-              TOP_LEVEL_SECTIONS.includes(currKey))
-          )
-            break;
-
+            (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))
+          ) break;
           if (curr.type === "bulleted-list") {
             listData = safeCall(extractBulletedListItems, curr, []);
             i++;
             break;
-          } else {
-            i++;
-          }
+          } else { i++; }
         }
         result[sectionKey] = listData;
       }
@@ -754,14 +667,12 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       else if (sectionKey === "Process_Scope_Summary") {
         const scopeObj: Record<string, any> = {};
         while (i < nodeList.length) {
-          const curr = nodeList[i];
+          const curr    = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
           if (
             curr.type === "heading-one" ||
-            (curr.type === "heading-five" &&
-              TOP_LEVEL_SECTIONS.includes(currKey))
-          )
-            break;
+            (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))
+          ) break;
 
           if (curr.type === "heading-five") {
             const subKey = childrenToText(curr.children).replace(/ /g, "_");
@@ -773,19 +684,15 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
             ) {
               const item = nodeList[i];
               if (item.type === "paragraph") {
-                // FIX: block-aware serialiser preserves fontSize/align/indent
                 subObj["Summary"] = serializeBlockNode(item);
               } else if (item.type === "bulleted-list") {
-                const listKey =
-                  subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
+                const listKey = subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
                 subObj[listKey] = safeCall(extractBulletedListItems, item, []);
               }
               i++;
             }
             scopeObj[subKey] = subObj;
-          } else {
-            i++;
-          }
+          } else { i++; }
         }
         result[sectionKey] = scopeObj;
       }
@@ -810,11 +717,8 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
       i++;
       if (i < nodeList.length && nodeList[i].type === "paragraph") {
         const text = childrenToText(nodeList[i].children);
-        try {
-          result[key] = JSON.parse(text);
-        } catch {
-          result[key] = text;
-        }
+        try { result[key] = JSON.parse(text); }
+        catch { result[key] = text; }
         i++;
       }
     } else {
