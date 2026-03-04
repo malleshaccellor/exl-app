@@ -1,7 +1,6 @@
 import type { Descendant } from "slate";
 import {
   cellToHtml,
-  nodeToHtml,
   htmlToCellChildren,
   htmlToSlateNodes,
 } from "./htmlConversion";
@@ -169,7 +168,6 @@ export const slateToTestCasesJson = (nodes: Descendant[]): any => {
     });
   }
 
-  // Convert maps back to arrays
   const requirements = Object.values(reqMap).map((req: any) => ({
     req_id: req.req_id,
     UserStories: Object.values(req.UserStories).map((story: any) => ({
@@ -254,9 +252,7 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
     return [{ type: "paragraph", children: [{ text: "" }] }];
   }
 
-  // Handle previously saved HTML data (from old save code)
   let cleanText = text.trim();
-  // Strip wrapping quotes if present (double-encoded responses)
   if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
     try {
       cleanText = JSON.parse(cleanText);
@@ -264,11 +260,9 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       // not valid JSON, use as-is
     }
   }
-  // Replace literal \n (escaped newlines) with actual newlines
   if (cleanText.includes("\\n")) {
     cleanText = cleanText.replace(/\\n/g, "\n");
   }
-  // If the content is HTML, parse it using the HTML parser
   if (/^<[a-z][\s\S]*>/i.test(cleanText.trim())) {
     return htmlToSlateNodes(cleanText);
   }
@@ -306,12 +300,10 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
           newParts.push(part);
           return;
         }
-
         let lastIndex = 0;
         let match;
         const partText = part.text;
         regex.lastIndex = 0;
-
         while ((match = regex.exec(partText)) !== null) {
           if (match.index > lastIndex) {
             newParts.push({ text: partText.slice(lastIndex, match.index) });
@@ -326,7 +318,7 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       parts = newParts;
     };
 
-    applyRegex(boldItalicRegex, "bold"); // Will need manual fix for nested marks
+    applyRegex(boldItalicRegex, "bold");
     applyRegex(boldRegex, "bold");
     applyRegex(italicRegex, "italic");
     applyRegex(strikethroughRegex, "strikethrough");
@@ -344,7 +336,6 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    // Numbered heading: "1. **Heading Text**"
     const numberedHeadingMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*\s*$/);
     if (numberedHeadingMatch) {
       flushList();
@@ -355,8 +346,6 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    // Sub-heading: short title-case phrase ending with colon (max 6 words)
-    // Avoids matching full sentences like "Here's a structured summary...:"
     const subHeadingMatch = trimmed.match(/^([A-Z][^-*].+):$/);
     if (
       subHeadingMatch &&
@@ -372,12 +361,10 @@ export const summaryToSlateValue = (text: string): Descendant[] => {
       continue;
     }
 
-    // Bullet item — use raw line to detect indentation level
     const bulletMatch = line.match(/^(\s*)([-*])\s+(.+)$/);
     if (bulletMatch) {
       const leadingSpaces = bulletMatch[1].length;
       const indent = leadingSpaces >= 4 ? 1 : 0;
-
       if (currentListType !== "bulleted-list") {
         flushList();
         currentListType = "bulleted-list";
@@ -435,13 +422,10 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
   for (const node of nodes as any[]) {
     const nodeType = (node as any).type;
 
-    // Add blank line (\n\n) between blocks to preserve original spacing.
-    // Exception: heading → list stays tight (no blank line between them).
     if (prevType && lines.length > 0) {
       const isHeadingToList =
         prevType === "heading-five" &&
         (nodeType === "bulleted-list" || nodeType === "numbered-list");
-
       if (!isHeadingToList) {
         lines.push("");
       }
@@ -456,8 +440,6 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
       }
       case "paragraph": {
         const children = node.children || [];
-        // Detect standalone bold subheadings (were originally "Text:")
-        // Use raw text without ** marks — bold was only for editor display
         if (
           children.length === 1 &&
           children[0].bold &&
@@ -507,6 +489,14 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
   return { response: lines.join("\n") };
 };
 
+// ============================================================
+// BRD — shared serialisation helpers (Slate → HTML)
+// ============================================================
+
+// FIX: was a flat inline-only serialiser that dropped fontSize / indent /
+// align from block nodes.  Now emits proper CSS style attributes so every
+// property round-trips correctly.
+
 const leafToInlineHtml = (node: any): string => {
   if (!node || !("text" in node)) return "";
   let html = node.text as string;
@@ -519,94 +509,91 @@ const leafToInlineHtml = (node: any): string => {
   return html;
 };
 
-/**
- * nodeToSlateHtml — serialize a single Slate node to HTML preserving ALL formatting:
- * align, indent, fontSize on block nodes + bold/italic/underline/etc on leaves.
- * Delegates to nodeToHtml from htmlConversion which handles every node type.
- */
-const nodeToSlateHtml = (node: any): string => nodeToHtml(node);
+// Block-aware serialiser: emits style attributes for fontSize / indent / align
+// and wraps block types in the appropriate HTML tag.
+const serializeBlockNode = (node: any): string => {
+  if ("text" in node) return leafToInlineHtml(node);
 
-/**
- * childrenToInlineHtml — serialize an array of Slate nodes to an HTML string.
- * Each node goes through nodeToHtml so block-level styles are never lost.
- */
-const childrenToInlineHtml = (children: any[]): string => {
-  return (children || []).map((c: any) => nodeToSlateHtml(c)).join("");
+  const inner = (node.children || []).map(serializeBlockNode).join("");
+
+  const styleProps: string[] = [];
+  if (node.fontSize) styleProps.push(`font-size:${node.fontSize}px`);
+  if (node.indent)   styleProps.push(`padding-left:${node.indent * 24}px`);
+  if (node.align && node.align !== "left") styleProps.push(`text-align:${node.align}`);
+  const styleAttr = styleProps.length ? ` style="${styleProps.join(";")}"` : "";
+
+  switch (node.type) {
+    case "paragraph":
+      return styleAttr ? `<p${styleAttr}>${inner}</p>` : inner;
+    case "bulleted-list":
+      return `<ul${styleAttr}>${inner}</ul>`;
+    case "numbered-list":
+      return `<ol${styleAttr}>${inner}</ol>`;
+    case "list-item":
+      return `<li${styleAttr}>${inner}</li>`;
+    case "heading-one":   return `<h1${styleAttr}>${inner}</h1>`;
+    case "heading-two":   return `<h2${styleAttr}>${inner}</h2>`;
+    case "heading-three": return `<h3${styleAttr}>${inner}</h3>`;
+    case "heading-four":  return `<h4${styleAttr}>${inner}</h4>`;
+    case "heading-five":  return `<h5${styleAttr}>${inner}</h5>`;
+    case "heading-six":   return `<h6${styleAttr}>${inner}</h6>`;
+    default:
+      return styleAttr ? `<span${styleAttr}>${inner}</span>` : inner;
+  }
 };
 
-// ============================================================
-// BRD (Slate → structured JSON)
-// ============================================================
+const childrenToInlineHtml = (children: any[]): string =>
+  (children || []).map(serializeBlockNode).join("");
 
-// Reverse display-name → JSON key mapping for top-level sections
-const BRD_SECTION_DISPLAY_TO_KEY: Record<string, string> = {
-  "Executive Summary": "Executive_Summary",
-  "Stakeholders & Key Personnel": "Stakeholders_and_Key_Personnel",
-  "Goals & objectives": "Goals_and_Objectives",
-  "Goals & Objectives": "Goals_and_Objectives",
-  "Process Scope Summary": "Process_Scope_Summary",
-  "Actors/Personas": "Actors_Personas",
-  Glossary: "Glossary",
-};
-
-const displayNameToKey = (name: string): string => {
-  return BRD_SECTION_DISPLAY_TO_KEY[name] || name.replace(/ /g, "_");
-};
-
-const childrenToText = (children: any[]): string => {
-  return (children || [])
-    .map((c: any) => {
-      if ("text" in c) return c.text || "";
-      return childrenToText(c.children);
-    })
+const childrenToText = (children: any[]): string =>
+  (children || [])
+    .map((c: any) => ("text" in c ? c.text || "" : childrenToText(c.children)))
     .join("");
-};
 
+// FIX: serialise entire list-item node (preserving indent/align) then strip
+// the outer <li> wrapper so only the content string ends up in the JSON array.
+const extractBulletedListItems = (listNode: any): string[] =>
+  (listNode.children || []).map((item: any) => {
+    const full = serializeBlockNode(item);
+    return full.replace(/^<li[^>]*>([\s\S]*)<\/li>$/, "$1") || full;
+  });
+
+// FIX: use serializeBlockNode per paragraph so <p style="font-size:…"> is
+// emitted when block-level styles are present.
 const extractTableAsArray = (tableNode: any): any[] => {
   const rows = tableNode.children || [];
   if (rows.length < 2) return [];
 
   const headerCells = rows[0].children || [];
-  const headers = headerCells.map((cell: any) => {
-    const text = childrenToText(cell.children);
-    return text.replace(/ /g, "_");
-  });
+  const headers = headerCells.map((cell: any) =>
+    childrenToText(cell.children).replace(/ /g, "_"),
+  );
 
   return rows.slice(1).map((row: any) => {
     const obj: Record<string, any> = {};
     (row.children || []).forEach((cell: any, i: number) => {
-      if (i < headers.length) {
-        const blockChildren = (cell.children || []).filter(
-          (c: any) => c.type !== undefined,
-        );
-        if (blockChildren.length > 1) {
-          // Multiple block nodes → was originally an array
-          // Serialize each block node (paragraph) with its own styles via nodeToHtml
-          obj[headers[i]] = blockChildren.map((p: any) => nodeToSlateHtml(p));
-        } else {
-          // Single value → serialize all cell children; each block node keeps its styles
-          obj[headers[i]] = childrenToInlineHtml(cell.children);
-        }
+      if (i >= headers.length) return;
+      const paragraphs = (cell.children || []).filter(
+        (c: any) => c.type === "paragraph",
+      );
+      if (paragraphs.length > 1) {
+        obj[headers[i]] = paragraphs.map((p: any) => serializeBlockNode(p));
+      } else {
+        obj[headers[i]] = childrenToInlineHtml(cell.children);
       }
     });
     return obj;
   });
 };
 
-const extractBulletedListItems = (listNode: any): string[] => {
-  return (listNode.children || []).map((item: any) => {
-    // Each list-item contains paragraph block nodes — serialize via nodeToHtml
-    // so align/indent/fontSize on those paragraphs are captured in the HTML string
-    return childrenToInlineHtml(item.children);
-  });
-};
+// ============================================================
+// BRD — brdToSlateValue
+// ============================================================
 
 export const brdToSlateValue = (rawResponse: string): Descendant[] => {
-  // Handle previously saved HTML data (from old save code)
   let cleanRaw =
     typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
   if (typeof cleanRaw === "string") {
-    // Strip wrapping quotes if present
     if (cleanRaw.startsWith('"') && cleanRaw.endsWith('"')) {
       try {
         cleanRaw = JSON.parse(cleanRaw);
@@ -614,11 +601,9 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
         // not valid JSON string, use as-is
       }
     }
-    // Replace literal \n with actual newlines
     if (typeof cleanRaw === "string" && cleanRaw.includes("\\n")) {
       cleanRaw = cleanRaw.replace(/\\n/g, "\n");
     }
-    // If the content is HTML, parse it using the HTML parser
     if (
       typeof cleanRaw === "string" &&
       /^<[a-z][\s\S]*>/i.test(cleanRaw.trim())
@@ -630,28 +615,42 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
   return transformBRDDataToSlate(parsed);
 };
 
+// ============================================================
+// BRD — slateToBrdJson
+// ============================================================
+
+const BRD_SECTION_DISPLAY_TO_KEY: Record<string, string> = {
+  "Executive Summary": "Executive_Summary",
+  "Stakeholders & Key Personnel": "Stakeholders_and_Key_Personnel",
+  "Goals & objectives": "Goals_and_Objectives",
+  "Goals & Objectives": "Goals_and_Objectives",
+  "Process Scope Summary": "Process_Scope_Summary",
+  "Actors/Personas": "Actors_Personas",
+  Glossary: "Glossary",
+};
+
+const displayNameToKey = (name: string): string =>
+  BRD_SECTION_DISPLAY_TO_KEY[name] || name.replace(/ /g, "_");
+
 export const slateToBrdJson = (nodes: Descendant[]): any => {
   const result: Record<string, any> = {};
   const nodeList = nodes as any[];
   let i = 0;
 
-  // List of all top-level section keys to prevent one section from "eating" another
   const TOP_LEVEL_SECTIONS = [
     "Executive_Summary",
     "Stakeholders_and_Key_Personnel",
     "Actors_Personas",
     "Glossary",
     "Goals_and_Objectives",
-    "Process_Scope_Summary"
+    "Process_Scope_Summary",
   ];
 
-  // Helper to safely call external functions like extractTableAsArray
   const safeCall = (fn: any, arg: any, fallback: any = []) => {
     try {
-      if (typeof fn !== "function") return fallback;
-      return fn(arg);
+      return typeof fn === "function" ? fn(arg) : fallback;
     } catch (err) {
-      console.error(`Parser Error:`, err);
+      console.error("Parser Error:", err);
       return fallback;
     }
   };
@@ -659,120 +658,168 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   while (i < nodeList.length) {
     const node = nodeList[i];
 
+    // ── heading-five (BRD sections) ────────────────────────────────────────
     if (node.type === "heading-five") {
       const sectionKey = displayNameToKey(childrenToText(node.children));
       i++;
 
-      /** 1. EXECUTIVE SUMMARY (Nested sub-headings) **/
+      /** 1. EXECUTIVE SUMMARY */
       if (sectionKey === "Executive_Summary") {
         const execSummary: Record<string, string> = {};
         while (i < nodeList.length) {
           const curr = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
-
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+          if (
+            curr.type === "heading-one" ||
+            (curr.type === "heading-five" &&
+              TOP_LEVEL_SECTIONS.includes(currKey))
+          )
+            break;
 
           if (curr.type === "heading-five") {
             const subKey = childrenToText(curr.children).replace(/ /g, "_");
             i++;
             let content = "";
-            while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
-              // Serialize the whole node (not just children) so block styles are captured
-              content += nodeToSlateHtml(nodeList[i]);
+            while (
+              i < nodeList.length &&
+              !["heading-five", "heading-one"].includes(nodeList[i].type)
+            ) {
+              // FIX: block-aware so fontSize / align / indent survive
+              content += serializeBlockNode(nodeList[i]);
               i++;
             }
             execSummary[subKey] = content;
-          } else { i++; }
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = execSummary;
       }
 
-      /** 2. TABLE SECTIONS (Stakeholders, Actors, Glossary) **/
-      else if (["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"].includes(sectionKey)) {
+      /** 2. TABLE SECTIONS */
+      else if (
+        [
+          "Stakeholders_and_Key_Personnel",
+          "Actors_Personas",
+          "Glossary",
+        ].includes(sectionKey)
+      ) {
         let tableData: any[] = [];
         while (i < nodeList.length) {
           const curr = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+          if (
+            curr.type === "heading-one" ||
+            (curr.type === "heading-five" &&
+              TOP_LEVEL_SECTIONS.includes(currKey))
+          )
+            break;
 
           if (curr.type === "table") {
             tableData = safeCall(extractTableAsArray, curr, []);
             i++;
-            break; // Stop after finding the primary table for this section
-          } else { i++; }
+            break;
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = tableData;
       }
 
-      /** 3. LIST SECTIONS (Goals and Objectives) **/
+      /** 3. LIST SECTIONS */
       else if (sectionKey === "Goals_and_Objectives") {
         let listData: any[] = [];
         while (i < nodeList.length) {
           const curr = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+          if (
+            curr.type === "heading-one" ||
+            (curr.type === "heading-five" &&
+              TOP_LEVEL_SECTIONS.includes(currKey))
+          )
+            break;
 
           if (curr.type === "bulleted-list") {
             listData = safeCall(extractBulletedListItems, curr, []);
             i++;
             break;
-          } else { i++; }
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = listData;
       }
 
-      /** 4. PROCESS SCOPE SUMMARY (Nested sub-headings with Summary & Lists) **/
+      /** 4. PROCESS SCOPE SUMMARY */
       else if (sectionKey === "Process_Scope_Summary") {
         const scopeObj: Record<string, any> = {};
         while (i < nodeList.length) {
           const curr = nodeList[i];
           const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" || (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+          if (
+            curr.type === "heading-one" ||
+            (curr.type === "heading-five" &&
+              TOP_LEVEL_SECTIONS.includes(currKey))
+          )
+            break;
 
           if (curr.type === "heading-five") {
             const subKey = childrenToText(curr.children).replace(/ /g, "_");
             i++;
             const subObj: Record<string, any> = {};
-            while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
+            while (
+              i < nodeList.length &&
+              !["heading-five", "heading-one"].includes(nodeList[i].type)
+            ) {
               const item = nodeList[i];
               if (item.type === "paragraph") {
-                // Serialize whole paragraph node so align/fontSize/indent are captured
-                subObj["Summary"] = nodeToSlateHtml(item);
+                // FIX: block-aware serialiser preserves fontSize/align/indent
+                subObj["Summary"] = serializeBlockNode(item);
               } else if (item.type === "bulleted-list") {
-                const listKey = subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
+                const listKey =
+                  subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
                 subObj[listKey] = safeCall(extractBulletedListItems, item, []);
               }
               i++;
             }
             scopeObj[subKey] = subObj;
-          } else { i++; }
+          } else {
+            i++;
+          }
         }
         result[sectionKey] = scopeObj;
       }
 
-      /** 5. FALLBACK (Unknown heading-five sections) **/
+      /** 5. FALLBACK */
       else {
         const contentParts: string[] = [];
-        while (i < nodeList.length && !["heading-five", "heading-one"].includes(nodeList[i].type)) {
-          contentParts.push(nodeToSlateHtml(nodeList[i]));
+        while (
+          i < nodeList.length &&
+          !["heading-five", "heading-one"].includes(nodeList[i].type)
+        ) {
+          contentParts.push(serializeBlockNode(nodeList[i]));
           i++;
         }
         result[sectionKey] = contentParts.join("\n");
       }
-    } 
+    }
 
-    /** 6. HEADING-ONE (Metadata/Citations) **/
+    /** 6. HEADING-ONE (metadata / citations) */
     else if (node.type === "heading-one") {
       const key = childrenToText(node.children).replace(/ /g, "_");
       i++;
       if (i < nodeList.length && nodeList[i].type === "paragraph") {
         const text = childrenToText(nodeList[i].children);
-        try { result[key] = JSON.parse(text); } 
-        catch { result[key] = text; }
+        try {
+          result[key] = JSON.parse(text);
+        } catch {
+          result[key] = text;
+        }
         i++;
       }
-    } 
-    else { i++; }
+    } else {
+      i++;
+    }
   }
 
   return {
