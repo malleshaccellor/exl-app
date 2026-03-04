@@ -1,18 +1,21 @@
 import type { Descendant } from "slate";
 import type { CustomText } from "../types";
 
-// --- Slate -> HTML ---
+// =============================================================================
+// INTERNAL STYLE HELPERS
+// =============================================================================
 
-const BLOCK_TAG_MAP: Record<string, string> = {
-  "heading-one":   "h1",
-  "heading-two":   "h2",
-  "block-quote":   "blockquote",
-  "numbered-list": "ol",
-  "bulleted-list": "ul",
-  "list-item":     "li",
+/** Build a CSS style attribute string from a Slate block node's style props. */
+const buildStyleAttr = (el: any): string => {
+  const props: string[] = [];
+  if (el.align && el.align !== "left") props.push(`text-align:${el.align}`);
+  if (el.indent)                        props.push(`padding-left:${el.indent * 24}px`);
+  if (el.fontSize)                      props.push(`font-size:${el.fontSize}px`);
+  return props.length > 0 ? ` style="${props.join(";")}"` : "";
 };
 
-export const leafToHtml = (leaf: CustomText): string => {
+/** Serialize a single text leaf to HTML inline marks. */
+const serializeLeaf = (leaf: CustomText): string => {
   let html = leaf.text;
   if (leaf.code)          html = `<code>${html}</code>`;
   if (leaf.italic)        html = `<em>${html}</em>`;
@@ -22,28 +25,12 @@ export const leafToHtml = (leaf: CustomText): string => {
   return html;
 };
 
-export const nodeToHtml = (node: Descendant): string => {
-  if ("text" in node) return leafToHtml(node as CustomText);
+// =============================================================================
+// FULL TAG MAP
+// =============================================================================
 
-  const el = node as any;
-  const inner = (el.children || []).map((child: Descendant) => nodeToHtml(child)).join("");
-
-  const styleProps: string[] = [];
-  if (el.align && el.align !== "left") styleProps.push(`text-align:${el.align}`);
-  if (el.indent)   styleProps.push(`padding-left:${el.indent * 24}px`);
-  if (el.fontSize) styleProps.push(`font-size:${el.fontSize}px`);
-  const styleAttr = styleProps.length > 0 ? ` style="${styleProps.join(";")}"` : "";
-
-  const tag = el.type ? BLOCK_TAG_MAP[el.type] : undefined;
-  if (tag) return `<${tag}${styleAttr}>${inner}</${tag}>`;
-
-  return styleAttr ? `<div${styleAttr}>${inner}</div>` : inner;
-};
-
-// --- Full Slate tree → HTML ---
-
-// FIX: h3/h4/h5/h6 and paragraph were missing — they fell through to the
-// default case which never emitted style attrs for them.
+// FIX: all six heading levels + paragraph present so styleAttr is emitted on
+// the correct semantic tag rather than falling through to a bare <div>.
 const FULL_TAG_MAP: Record<string, string> = {
   "heading-one":   "h1",
   "heading-two":   "h2",
@@ -58,73 +45,77 @@ const FULL_TAG_MAP: Record<string, string> = {
   "paragraph":     "p",
 };
 
-const escapeHtml = (text: string): string =>
-  text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+// =============================================================================
+// UNIFIED SERIALISER
+// =============================================================================
+// Previously the codebase had TWO serialisers:
+//   • nodeToHtml    – used by cellToHtml; only knew h1/h2, never emitted <p>
+//   • serializeNode – used by slateToHtml; had the full map but was separate
+//
+// This caused indent/fontSize/align to be silently dropped for paragraphs and
+// h3–h6 inside table cells (cellToHtml path).
+// One unified function fixes both paths.
 
 const serializeNode = (node: Descendant): string => {
-  if ("text" in node) {
-    let html = escapeHtml(node.text);
-    const leaf = node as CustomText;
-    if (leaf.code)          html = `<code>${html}</code>`;
-    if (leaf.italic)        html = `<em>${html}</em>`;
-    if (leaf.bold)          html = `<strong>${html}</strong>`;
-    if (leaf.underline)     html = `<u>${html}</u>`;
-    if (leaf.strikethrough) html = `<s>${html}</s>`;
-    return html;
-  }
+  // Text leaf
+  if ("text" in node) return serializeLeaf(node as CustomText);
 
-  const el = node as any;
-  const children = (el.children || [])
-    .map((child: Descendant) => serializeNode(child))
-    .join("");
+  const el    = node as any;
+  const inner = (el.children || []).map((c: Descendant) => serializeNode(c)).join("");
+  const style = buildStyleAttr(el);
 
-  // FIX: styleProps now applied to ALL block types including every heading level
-  const styleProps: string[] = [];
-  if (el.align && el.align !== "left") styleProps.push(`text-align:${el.align}`);
-  if (el.indent)   styleProps.push(`padding-left:${el.indent * 24}px`);
-  if (el.fontSize) styleProps.push(`font-size:${el.fontSize}px`);
-  const styleAttr = styleProps.length > 0 ? ` style="${styleProps.join(";")}"` : "";
-
+  // Known block types
   const tag = FULL_TAG_MAP[el.type];
-  if (tag) return `<${tag}${styleAttr}>${children}</${tag}>`;
+  if (tag) return `<${tag}${style}>${inner}</${tag}>`;
 
+  // Special types
   switch (el.type) {
-    case "code-block":
-      return `<pre${styleAttr}><code>${children}</code></pre>`;
-    case "table":
-      return `<table${styleAttr}>${children}</table>`;
-    case "table-row":
-      return `<tr${styleAttr}>${children}</tr>`;
+    case "code-block":        return `<pre${style}><code>${inner}</code></pre>`;
+    case "table":             return `<table${style}>${inner}</table>`;
+    case "table-row":         return `<tr${style}>${inner}</tr>`;
     case "table-cell":
-    case "table-cell-header":
-      return `<td${styleAttr}>${children}</td>`;
+    case "table-cell-header": return `<td${style}>${inner}</td>`;
     default:
-      return styleAttr ? `<div${styleAttr}>${children}</div>` : children;
+      return style ? `<div${style}>${inner}</div>` : inner;
   }
 };
 
-export const slateToHtml = (nodes: Descendant[]): string =>
-  nodes.map((node) => serializeNode(node)).join("\n");
+// =============================================================================
+// PUBLIC SERIALISATION API
+// =============================================================================
 
+/** @deprecated kept for external callers; delegates to unified serializeNode */
+export const leafToHtml = (leaf: CustomText): string => serializeLeaf(leaf);
+
+/** @deprecated kept for external callers; delegates to unified serializeNode */
+export const nodeToHtml = (node: Descendant): string => serializeNode(node);
+
+export const slateToHtml = (nodes: Descendant[]): string =>
+  nodes.map(serializeNode).join("\n");
+
+/**
+ * Serialize a table cell's children to a single HTML string.
+ * FIX: now uses the unified serializeNode so paragraphs, all heading levels,
+ * and every style prop (fontSize, indent, align) are preserved inside cells.
+ */
 export const cellToHtml = (cell: { children?: Descendant[] }): string =>
-  (cell.children || []).map((child: Descendant) => nodeToHtml(child)).join("\n");
+  (cell.children || []).map(serializeNode).join("\n");
 
 export const cellToHtmlArray = (cell: { children?: Descendant[] }): string[] =>
   (cell.children || [])
-    .map((child: Descendant) => nodeToHtml(child))
+    .map(serializeNode)
     .filter((t: string) => t.trim().length > 0);
 
-// --- HTML -> Slate ---
+// =============================================================================
+// HTML → SLATE  (deserialiser)
+// =============================================================================
 
 export const htmlToLeaves = (html: string): CustomText[] => {
   if (!html || html.trim() === "") return [{ text: "" }];
 
   const leaves: CustomText[] = [];
   const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
+  const doc    = parser.parseFromString(html, "text/html");
 
   const walk = (node: Node, marks: Partial<CustomText>) => {
     if (node.nodeType === 3) {
@@ -135,10 +126,10 @@ export const htmlToLeaves = (html: string): CustomText[] => {
     if (node.nodeType === 1) {
       const newMarks = { ...marks };
       const tag = (node as Element).tagName.toLowerCase();
-      if (tag === "strong" || tag === "b") newMarks.bold = true;
-      if (tag === "em"     || tag === "i") newMarks.italic = true;
-      if (tag === "u")                     newMarks.underline = true;
-      if (tag === "code")                  newMarks.code = true;
+      if (tag === "strong" || tag === "b") newMarks.bold          = true;
+      if (tag === "em"     || tag === "i") newMarks.italic        = true;
+      if (tag === "u")                     newMarks.underline     = true;
+      if (tag === "code")                  newMarks.code          = true;
       if (tag === "s")                     newMarks.strikethrough = true;
       for (const child of Array.from(node.childNodes)) walk(child, newMarks);
     }
@@ -148,9 +139,9 @@ export const htmlToLeaves = (html: string): CustomText[] => {
   return leaves.length > 0 ? leaves : [{ text: "" }];
 };
 
-// FIX 1: h3/h4/h5/h6 were missing — they fell through deserialize's slateType
-// check and were treated as unknown tags, so they lost their heading type and
-// all associated styles on round-trip.
+// FIX: all six heading levels present so h3–h6 round-trip as the correct
+// Slate type instead of falling through to an unknown-tag branch that loses
+// both the type and all block-level styles.
 const HTML_TAG_TO_SLATE: Record<string, string> = {
   h1:         "heading-one",
   h2:         "heading-two",
@@ -164,93 +155,68 @@ const HTML_TAG_TO_SLATE: Record<string, string> = {
   li:         "list-item",
 };
 
+/** Extract block-level style props from an HTML element's inline style. */
+const extractNodeProps = (el: HTMLElement): Record<string, any> => {
+  const props: Record<string, any> = {};
+  if (el.style.textAlign) {
+    props.align = el.style.textAlign;
+  }
+  if (el.style.paddingLeft) {
+    const px = parseInt(el.style.paddingLeft, 10);
+    if (!isNaN(px) && px > 0) props.indent = Math.round(px / 24);
+  }
+  if (el.style.fontSize) {
+    const size = parseInt(el.style.fontSize, 10);
+    if (!isNaN(size)) props.fontSize = size;
+  }
+  return props;
+};
+
 const deserialize = (domNode: Node, marks: Partial<CustomText> = {}): any[] => {
+  // Text node
   if (domNode.nodeType === 3) {
     return [{ text: domNode.textContent || "", ...marks }];
   }
   if (domNode.nodeType !== 1) return [];
 
-  const el = domNode as HTMLElement;
+  const el  = domNode as HTMLElement;
   const tag = el.tagName.toLowerCase();
-  const newMarks = { ...marks };
 
-  // Inline marks
-  if (tag === "strong" || tag === "b") newMarks.bold = true;
-  if (tag === "em"     || tag === "i") newMarks.italic = true;
-  if (tag === "u")                     newMarks.underline = true;
-  if (tag === "code")                  newMarks.code = true;
+  // Propagate inline marks downward
+  const newMarks = { ...marks };
+  if (tag === "strong" || tag === "b") newMarks.bold          = true;
+  if (tag === "em"     || tag === "i") newMarks.italic        = true;
+  if (tag === "u")                     newMarks.underline     = true;
+  if (tag === "code")                  newMarks.code          = true;
   if (tag === "s" || tag === "del")    newMarks.strikethrough = true;
 
-  // FIX 2: style extraction was already present but the extracted nodeProps
-  // were only spread onto the Slate node in the "styled div/span fallback"
-  // branch — NOT in the slateType branch.  So headings always lost their
-  // fontSize/indent/align even when h3-h6 were present in the map.
-  // Now nodeProps is collected once and spread unconditionally below.
-  const nodeProps: any = {};
-  if (el.style.textAlign) {
-    nodeProps.align = el.style.textAlign;
-  }
-  if (el.style.paddingLeft) {
-    const px = parseInt(el.style.paddingLeft, 10);
-    if (!isNaN(px)) nodeProps.indent = Math.round(px / 24);
-  }
-  if (el.style.fontSize) {
-    const size = parseInt(el.style.fontSize, 10);
-    if (!isNaN(size)) nodeProps.fontSize = size;
-  }
+  // FIX: extract block-level style props ONCE and spread onto EVERY matched
+  // Slate type.  Previously nodeProps was only used in the "styled div fallback"
+  // branch, so headings/lists always lost their fontSize/indent/align even
+  // when the tag was present in HTML_TAG_TO_SLATE.
+  const nodeProps = extractNodeProps(el);
 
-  const children = Array.from(domNode.childNodes).flatMap((child) =>
-    deserialize(child, newMarks),
-  );
+  // Recurse into children
+  const children    = Array.from(domNode.childNodes).flatMap((c) => deserialize(c, newMarks));
+  const safeChildren = children.length > 0 ? children : [{ text: "", ...newMarks }];
 
+  // Known Slate block types (headings, lists, blockquote)
   const slateType = HTML_TAG_TO_SLATE[tag];
   if (slateType) {
-    // FIX: ...nodeProps spread here so heading/list/blockquote nodes all
-    // receive fontSize, indent, align from their style attribute.
-    return [
-      {
-        type: slateType,
-        ...nodeProps,
-        children: children.length > 0 ? children : [{ text: "", ...newMarks }],
-      },
-    ];
+    return [{ type: slateType, ...nodeProps, children: safeChildren }];
   }
 
-  if (tag === "br") return [{ text: "\n", ...newMarks }];
+  // Explicit block tags
+  if (tag === "p")   return [{ type: "paragraph",  ...nodeProps, children: safeChildren }];
+  if (tag === "pre") return [{ type: "code-block", ...nodeProps, children: safeChildren }];
+  if (tag === "br")  return [{ text: "\n", ...newMarks }];
 
-  // Explicit paragraph handling
-  if (tag === "p") {
-    return [
-      {
-        type: "paragraph",
-        ...nodeProps,
-        children: children.length > 0 ? children : [{ text: "" }],
-      },
-    ];
-  }
-
-  // pre / code-block
-  if (tag === "pre") {
-    return [
-      {
-        type: "code-block",
-        ...nodeProps,
-        children: children.length > 0 ? children : [{ text: "" }],
-      },
-    ];
-  }
-
-  // Styled div/span without a specific Slate type → paragraph
+  // Styled span/div without a Slate type → wrap as paragraph to keep styles
   if (Object.keys(nodeProps).length > 0 && tag !== "body" && tag !== "html") {
-    return [
-      {
-        type: "paragraph",
-        ...nodeProps,
-        children: children.length > 0 ? children : [{ text: "" }],
-      },
-    ];
+    return [{ type: "paragraph", ...nodeProps, children: safeChildren }];
   }
 
+  // Transparent wrappers (body, html, plain span/div)
   return children;
 };
 
@@ -259,14 +225,14 @@ export const htmlToSlateNodes = (html: string): Descendant[] => {
     return [{ type: "paragraph", children: [{ text: "" }] }];
 
   const parser = new DOMParser();
-  const doc = parser.parseFromString(html, "text/html");
-  const fragment = deserialize(doc.body);
+  const doc    = parser.parseFromString(html, "text/html");
+  const nodes  = deserialize(doc.body);
 
   // Wrap any loose text leaves in paragraphs
-  return fragment.reduce((acc: any[], node) => {
-    if (node.text !== undefined) {
+  return nodes.reduce((acc: any[], node) => {
+    if ("text" in node) {
       const last = acc[acc.length - 1];
-      if (last && last.type === "paragraph") {
+      if (last?.type === "paragraph") {
         last.children.push(node);
       } else {
         acc.push({ type: "paragraph", children: [node] });
