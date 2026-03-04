@@ -5,45 +5,52 @@ import { htmlToSlateNodes } from "./htmlConversion";
 // =============================================================================
 
 /**
- * Parse an HTML string into full Slate nodes (preserving fontSize, indent,
- * align, bold, italic, etc.).
- *
- * FIX: the old version called htmlToLeaves() which only extracted inline marks
- * and silently discarded every block-level style property.
+ * Parse an HTML string into full Slate nodes, preserving every style prop
+ * (fontSize, indent, align) and inline mark (bold, italic, etc.).
  */
-const parseInlineHtml = (str: string): any[] => {
+const parseHtml = (str: string): any[] => {
   if (!str) return [{ text: "" }];
-  if (/<\/?[a-z][\s\S]*?>/i.test(str)) {
-    return htmlToSlateNodes(str);
-  }
+  if (/<\/?[a-z][\s\S]*?>/i.test(str)) return htmlToSlateNodes(str);
   return [{ text: str }];
 };
 
 /**
- * Turn a parsed-HTML result into the children array of a single paragraph.
+ * Return the children array suitable for a single paragraph node.
  *
- * If htmlToSlateNodes returned exactly one paragraph we unwrap it so the
- * caller's own paragraph wrapper doesn't create a double-nested paragraph.
- * If it returned multiple blocks (e.g. a heading + paragraph) we return them
- * as-is so they can be spread directly into the parent node list.
+ * • If parseHtml returns exactly one paragraph → unwrap its children.
+ * • Otherwise flatten to leaves (avoids nesting blocks inside blocks).
  */
 const htmlToParagraphChildren = (str: string): any[] => {
   if (!str) return [{ text: "" }];
-  const nodes = parseInlineHtml(str);
-  if (nodes.length === 1 && nodes[0].type === "paragraph") {
+  const nodes = parseHtml(str);
+  if (nodes.length === 1 && nodes[0].type === "paragraph")
     return nodes[0].children ?? [{ text: "" }];
-  }
-  // Multiple or non-paragraph blocks — return leaf text from the first node
-  // to avoid nesting block nodes inside another block's children array.
-  // Callers that need full block output should use parseInlineHtml() directly.
-  if (nodes.length === 1 && "text" in nodes[0]) return nodes;
-  // Flatten to leaves when content is complex
   const flatten = (ns: any[]): any[] =>
-    ns.flatMap((n: any) =>
-      "text" in n ? [n] : flatten(n.children || []),
-    );
+    ns.flatMap((n: any) => ("text" in n ? [n] : flatten(n.children || [])));
   const flat = flatten(nodes);
   return flat.length > 0 ? flat : [{ text: "" }];
+};
+
+/**
+ * Build a Slate heading-five node.
+ *
+ * If `headingHtml` is provided (from the saved `_headings` map) we fully
+ * deserialise it so bold / italic / fontSize / indent / align are all restored.
+ * Otherwise we fall back to a plain text heading.
+ */
+const makeHeadingFive = (fallbackText: string, headingHtml?: string): any => {
+  if (headingHtml) {
+    const nodes = htmlToSlateNodes(headingHtml);
+    // htmlToSlateNodes wraps <h5> content in a heading-five node — return it
+    if (nodes.length === 1 && nodes[0].type === "heading-five") return nodes[0];
+    // Unexpected shape — still better than losing styles: wrap in heading-five
+    if (nodes.length > 0) {
+      const flat = (ns: any[]): any[] =>
+        ns.flatMap((n: any) => ("text" in n ? [n] : flat(n.children || [])));
+      return { type: "heading-five" as const, children: flat(nodes) };
+    }
+  }
+  return { type: "heading-five" as const, children: [{ text: fallbackText }] };
 };
 
 // =============================================================================
@@ -55,7 +62,6 @@ export const createSlateTable = (data: any[]): any => {
     return { type: "paragraph", children: [{ text: "" }] };
 
   const headers = Object.keys(data[0]);
-
   return {
     type: "table" as const,
     className: "editor-custom-table",
@@ -64,12 +70,10 @@ export const createSlateTable = (data: any[]): any => {
         type: "table-row" as const,
         children: headers.map((header) => ({
           type: "table-cell-header" as const,
-          children: [
-            {
-              type: "paragraph" as const,
-              children: [{ text: header.replace(/_/g, " "), bold: true }],
-            },
-          ],
+          children: [{
+            type: "paragraph" as const,
+            children: [{ text: header.replace(/_/g, " "), bold: true }],
+          }],
         })),
       },
       ...data.map((row) => ({
@@ -79,20 +83,17 @@ export const createSlateTable = (data: any[]): any => {
           if (Array.isArray(val)) {
             return {
               type: "table-cell" as const,
-              children:
-                val.length > 0
-                  ? val.map((item: string) => ({
-                      type: "paragraph" as const,
-                      children: [{ text: String(item) }],
-                    }))
-                  : [{ type: "paragraph" as const, children: [{ text: "" }] }],
+              children: val.length > 0
+                ? val.map((item: string) => ({
+                    type: "paragraph" as const,
+                    children: [{ text: String(item) }],
+                  }))
+                : [{ type: "paragraph" as const, children: [{ text: "" }] }],
             };
           }
           return {
             type: "table-cell" as const,
-            children: [
-              { type: "paragraph" as const, children: [{ text: String(val || "") }] },
-            ],
+            children: [{ type: "paragraph" as const, children: [{ text: String(val || "") }] }],
           };
         }),
       })),
@@ -121,18 +122,14 @@ export const createSlateNumberedList = (items: string[]): any => ({
 // =============================================================================
 
 /**
- * Build a Slate table from BRD JSON data, fully preserving inline HTML styles.
- *
- * FIX: array items and string values are both run through htmlToParagraphChildren
- * (backed by htmlToSlateNodes) so fontSize, indent, align, bold, italic etc.
- * are all preserved as proper Slate marks and block props.
+ * Build a Slate table from BRD JSON data.
+ * Cell values are fully deserialised so fontSize/indent/align/marks survive.
  */
 const createBrdSlateTable = (data: any[]): any => {
   if (!data || data.length === 0)
     return { type: "paragraph", children: [{ text: "" }] };
 
   const headers = Object.keys(data[0]);
-
   return {
     type: "table" as const,
     className: "editor-custom-table",
@@ -141,35 +138,28 @@ const createBrdSlateTable = (data: any[]): any => {
         type: "table-row" as const,
         children: headers.map((header) => ({
           type: "table-cell-header" as const,
-          children: [
-            {
-              type: "paragraph" as const,
-              children: [{ text: header.replace(/_/g, " "), bold: true }],
-            },
-          ],
+          children: [{
+            type: "paragraph" as const,
+            children: [{ text: header.replace(/_/g, " "), bold: true }],
+          }],
         })),
       },
       ...data.map((row) => ({
         type: "table-row" as const,
         children: headers.map((key) => {
           const val = row[key];
-
-          // Array → one paragraph per item with full HTML deserialisation
           if (Array.isArray(val)) {
             return {
               type: "table-cell" as const,
-              children:
-                val.length > 0
-                  ? val.map((item: string) => ({
-                      type: "paragraph" as const,
-                      children: htmlToParagraphChildren(String(item)),
-                    }))
-                  : [{ type: "paragraph" as const, children: [{ text: "" }] }],
+              children: val.length > 0
+                ? val.map((item: string) => ({
+                    type: "paragraph" as const,
+                    children: htmlToParagraphChildren(String(item)),
+                  }))
+                : [{ type: "paragraph" as const, children: [{ text: "" }] }],
             };
           }
-
-          // String value — detect whether it parsed into block nodes
-          const parsed    = parseInlineHtml(String(val || ""));
+          const parsed    = parseHtml(String(val || ""));
           const hasBlocks = parsed.some((n: any) => n.type !== undefined && !("text" in n));
           return {
             type: "table-cell" as const,
@@ -185,9 +175,7 @@ const createBrdSlateTable = (data: any[]): any => {
 
 /**
  * Build a Slate bulleted list from BRD JSON items.
- *
- * FIX: each item is run through htmlToParagraphChildren so bold/italic/
- * fontSize inside an item's HTML string is preserved as Slate marks.
+ * Each item is fully deserialised so inline marks survive.
  */
 const createBrdBulletedList = (items: string[]): any => ({
   type: "bulleted-list" as const,
@@ -201,103 +189,90 @@ const createBrdBulletedList = (items: string[]): any => ({
 // transformBRDDataToSlate
 // =============================================================================
 //
-// FIX summary for heading nodes:
+// KEY DESIGN: `_headings` metadata map
+// ─────────────────────────────────────
+// slateToBrdJson now saves a `_headings` object alongside the section data:
 //
-// Previously every section header was created as a plain heading-five with
-// a hardcoded text leaf:
-//   { type:"heading-five", children:[{ text:"Executive Summary" }] }
+//   {
+//     "Executive_Summary": { "Introduction": "…", … },
+//     "_headings": {
+//       "Executive_Summary": "<h5 style='font-size:20px'><strong>…</strong></h5>",
+//       "Introduction":      "<h5 style='text-align:center'>Introduction</h5>",
+//       "Stakeholders_and_Key_Personnel": "<h5><em>Stakeholders…</em></h5>",
+//       …
+//     }
+//   }
 //
-// This means any fontSize / align / indent / bold / italic the user applied
-// to that heading in the editor was thrown away on every save→reload cycle
-// because slateToBrdJson stores the section by its plain-text key name, not
-// as HTML.
+// Here we read that map and pass each entry into makeHeadingFive(), which
+// deserialises the HTML back into a full Slate heading-five node — restoring
+// every style the user applied (bold, italic, fontSize, indent, align).
 //
-// The correct fix is twofold:
-//   1. When READING from JSON: keep hardcoded headings for known section keys
-//      (they're structural, not user-editable content) — no change needed here.
-//   2. When WRITING to JSON: slateToBrdJson must use serializeBlockNode (not
-//      childrenToText) for content nodes inside sections so styles survive.
-//      That is handled in converters.ts.
-//
-// Sub-section headings inside Executive Summary (e.g. "Introduction",
-// "Problem Statement") are CONTENT headings — the user can style them.
-// They are stored as HTML strings in the JSON (e.g.
-// "<h5 style=\"font-size:20px\"><strong>Introduction</strong></h5>").
-// On reload htmlToSlateNodes correctly deserialises them with all styles.
+// If no `_headings` entry exists for a key (e.g. fresh AI-generated content),
+// makeHeadingFive() falls back gracefully to a plain text heading.
 
 export const transformBRDDataToSlate = (obj: any): any[] => {
   if (!obj) return [{ type: "paragraph", children: [{ text: "" }] }];
 
-  return Object.entries(obj).flatMap(([key, value]) => {
+  // Extract and remove the headings metadata before processing sections
+  const headingsMap: Record<string, string> = obj["_headings"] || {};
 
-    // ── Executive Summary ───────────────────────────────────────────────────
+  return Object.entries(obj).flatMap(([key, value]) => {
+    // Skip the internal metadata key — it is not a content section
+    if (key === "_headings") return [];
+
+    // ── Executive Summary ──────────────────────────────────────────────────
     if (key === "Executive_Summary" && typeof value === "object" && value !== null) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Executive Summary" }],
-      };
+      // Restore the top-level heading with its saved styles
+      const sectionHeader = makeHeadingFive("Executive Summary", headingsMap["Executive_Summary"]);
 
       const subNodes = Object.entries(value).flatMap(([subKey, subValue]) => {
-        // Sub-heading: may have been saved as plain text or as HTML
-        // (e.g. "<h5 style='font-size:20px'>Introduction</h5>")
-        const subHeadingText = subKey.replace(/_/g, " ");
-        const parsedHeading  = parseInlineHtml(subHeadingText);
+        const subDisplayText = subKey.replace(/_/g, " ");
 
-        // If the stored subKey itself is HTML use it; otherwise build a plain heading
-        const subHeadingNode = /<\/?[a-z]/i.test(subKey)
-          ? parsedHeading          // already full Slate nodes
-          : [{ type: "heading-five" as const, children: [{ text: subHeadingText }] }];
+        // Restore the sub-heading (Introduction, Problem Statement, etc.)
+        const subHeadingNode = makeHeadingFive(subDisplayText, headingsMap[subKey]);
 
-        // Content: fully deserialised so styles survive
-        const contentNodes = parseInlineHtml(String(subValue));
+        // Restore the content (paragraphs, possibly with block styles)
+        const contentNodes = parseHtml(String(subValue));
         const hasBlocks    = contentNodes.some((n: any) => n.type !== undefined && !("text" in n));
         const contentBlock = hasBlocks
           ? contentNodes
           : [{ type: "paragraph" as const, children: contentNodes }];
 
-        return [...subHeadingNode, ...contentBlock];
+        return [subHeadingNode, ...contentBlock];
       });
 
       return [sectionHeader, ...subNodes];
     }
 
-    // ── Stakeholders & Key Personnel ────────────────────────────────────────
+    // ── Stakeholders & Key Personnel ───────────────────────────────────────
     if (key === "Stakeholders_and_Key_Personnel" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Stakeholders & Key Personnel" }] },
+        makeHeadingFive("Stakeholders & Key Personnel", headingsMap["Stakeholders_and_Key_Personnel"]),
         createBrdSlateTable(value),
       ];
     }
 
-    // ── Goals & Objectives ──────────────────────────────────────────────────
+    // ── Goals & Objectives ─────────────────────────────────────────────────
     if (key === "Goals_and_Objectives" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Goals & objectives" }] },
+        makeHeadingFive("Goals & objectives", headingsMap["Goals_and_Objectives"]),
         createBrdBulletedList(value),
       ];
     }
 
-    // ── Process Scope Summary ───────────────────────────────────────────────
+    // ── Process Scope Summary ──────────────────────────────────────────────
     if (key === "Process_Scope_Summary" && typeof value === "object" && value !== null) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Process Scope Summary" }],
-      };
+      const sectionHeader = makeHeadingFive("Process Scope Summary", headingsMap["Process_Scope_Summary"]);
 
       const scopeNodes = Object.entries(value).flatMap(
         ([scopeKey, scopeValue]: [string, any]) => {
-          const scopeTitle = {
-            type: "heading-five" as const,
-            children: [{ text: scopeKey.replace(/_/g, " ") }],
-          };
+          const scopeDisplayText = scopeKey.replace(/_/g, " ");
+          const scopeTitle = makeHeadingFive(scopeDisplayText, headingsMap[scopeKey]);
 
           const scopeContent = Object.entries(scopeValue as Record<string, any>).flatMap(
             ([_subKey, subValue]: [string, any]) => {
-              if (Array.isArray(subValue)) {
-                return [createBrdBulletedList(subValue)];
-              }
-              // FIX: full deserialisation preserves fontSize/align/indent/marks
-              const parsed    = parseInlineHtml(String(subValue));
+              if (Array.isArray(subValue)) return [createBrdBulletedList(subValue)];
+              const parsed    = parseHtml(String(subValue));
               const hasBlocks = parsed.some((n: any) => n.type !== undefined && !("text" in n));
               return hasBlocks
                 ? parsed
@@ -312,23 +287,23 @@ export const transformBRDDataToSlate = (obj: any): any[] => {
       return [sectionHeader, ...scopeNodes];
     }
 
-    // ── Glossary ────────────────────────────────────────────────────────────
+    // ── Glossary ───────────────────────────────────────────────────────────
     if (key === "Glossary" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Glossary" }] },
+        makeHeadingFive("Glossary", headingsMap["Glossary"]),
         createBrdSlateTable(value),
       ];
     }
 
-    // ── Actors / Personas ───────────────────────────────────────────────────
+    // ── Actors / Personas ──────────────────────────────────────────────────
     if (key === "Actors_Personas" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Actors/Personas" }] },
+        makeHeadingFive("Actors/Personas", headingsMap["Actors_Personas"]),
         createBrdSlateTable(value),
       ];
     }
 
-    // ── Fallback ────────────────────────────────────────────────────────────
+    // ── Fallback (unknown keys) ────────────────────────────────────────────
     return [
       { type: "heading-one" as const, children: [{ text: key }] },
       {
