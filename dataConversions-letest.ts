@@ -1,709 +1,204 @@
 import type { Descendant } from "slate";
-import {
-  cellToHtml,
-  htmlToCellChildren,
-  htmlToSlateNodes,
-} from "./htmlConversion";
-import { transformBRDDataToSlate } from "./index";
 import type { CustomText } from "../types";
 
-// --- Helper: parse agent response (string → object) ---
+// =============================================================================
+// SHARED HELPERS
+// =============================================================================
 
-export const parseAgentResponse = (raw: unknown): any => {
-  if (typeof raw !== "string") return raw;
-  let str = raw.trim();
-  if (str.startsWith("```")) {
-    str = str.replace(/^```(?:json)?\s*\n?/, "").replace(/\n?```\s*$/, "");
-  }
-  return JSON.parse(str);
+const buildStyleAttr = (el: any): string => {
+  const props: string[] = [];
+  if (el.align && el.align !== "left") props.push(`text-align:${el.align}`);
+  if (el.indent)                        props.push(`padding-left:${el.indent * 24}px`);
+  if (el.fontSize)                      props.push(`font-size:${el.fontSize}px`);
+  return props.length > 0 ? ` style="${props.join(";")}"` : "";
 };
 
-// ============================================================
-// TEST CASES
-// ============================================================
-
-const TC_VISIBLE_COLUMNS = [
-  { key: "req_id",          label: "Req ID" },
-  { key: "userstory_id",    label: "User Story ID" },
-  { key: "TestCaseId",      label: "Test Case ID" },
-  { key: "TestCaseTitle",   label: "Test Case Title" },
-  { key: "Description",     label: "Description" },
-  { key: "Preconditions",   label: "Preconditions" },
-  { key: "TestData",        label: "Test Data" },
-  { key: "TestSteps",       label: "Test Steps" },
-  { key: "ExpectedResults", label: "Expected Results" },
-];
-
-export const testCasesToSlateValue = (data: any): Descendant[] => {
-  const allRows: any[] = [];
-
-  for (const req of data.Requirements || []) {
-    for (const story of req.UserStories || []) {
-      for (const act of story.AcceptanceCriteriaTests || []) {
-        for (const tc of act.TestCases || []) {
-          const hiddenData: Record<string, string> = {
-            AcceptanceCriterion: act.AcceptanceCriterion || "",
-            ActualResults:       tc.ActualResults        || "",
-            PassFail:            tc.PassFail             || "",
-          };
-
-          const rowData: Record<string, any> = {
-            req_id:          req.req_id,
-            userstory_id:    story.userstory_id,
-            TestCaseId:      tc.TestCaseId,
-            TestCaseTitle:   tc.TestCaseTitle,
-            Description:     tc.Description,
-            Preconditions:   Array.isArray(tc.Preconditions)
-              ? tc.Preconditions : [String(tc.Preconditions || "")],
-            TestData:        Array.isArray(tc.TestData)
-              ? tc.TestData : [String(tc.TestData || "")],
-            TestSteps:       Array.isArray(tc.TestSteps)
-              ? tc.TestSteps : [String(tc.TestSteps || "")],
-            ExpectedResults: tc.ExpectedResults,
-          };
-
-          allRows.push({
-            type: "table-row",
-            hiddenData,
-            children: TC_VISIBLE_COLUMNS.map(({ key }) => {
-              const val = rowData[key];
-              if (Array.isArray(val)) {
-                return {
-                  type: "table-cell",
-                  children: val.flatMap((item: string) =>
-                    htmlToCellChildren(String(item || ""))),
-                };
-              }
-              return {
-                type: "table-cell",
-                children: htmlToCellChildren(val != null ? String(val) : ""),
-              };
-            }),
-          });
-        }
-      }
-    }
-  }
-
-  const headerRow = {
-    type: "table-row" as const,
-    children: TC_VISIBLE_COLUMNS.map(({ label }) => ({
-      type: "table-cell" as const,
-      isHeader: true,
-      children: [{ type: "paragraph" as const, children: [{ text: label }] }],
-    })),
-  };
-
-  if (allRows.length === 0)
-    return [{ type: "paragraph", children: [{ text: "" }] }];
-
-  return [{
-    type: "table",
-    className: "editor-custom-table",
-    children: [headerRow, ...allRows],
-  }];
-};
-
-export const slateToTestCasesJson = (nodes: Descendant[]): any => {
-  const tableNode = (nodes as any[]).find((n) => n.type === "table");
-  if (!tableNode) return { Requirements: [] };
-
-  const dataRows = tableNode.children.slice(1);
-  const reqMap: Record<string, any> = {};
-
-  for (const row of dataRows) {
-    const cells  = row.children;
-    const hidden = row.hiddenData || {};
-
-    const reqId       = cellToHtml(cells[0]).trim();
-    const userstoryId = cellToHtml(cells[1]).trim();
-
-    if (!reqMap[reqId]) reqMap[reqId] = { req_id: reqId, UserStories: {} };
-    if (!reqMap[reqId].UserStories[userstoryId]) {
-      reqMap[reqId].UserStories[userstoryId] = {
-        userstory_id: userstoryId,
-        AcceptanceCriteriaTests: {},
-      };
-    }
-
-    const criterion = hidden.AcceptanceCriterion || "";
-    const storyObj  = reqMap[reqId].UserStories[userstoryId];
-    if (!storyObj.AcceptanceCriteriaTests[criterion]) {
-      storyObj.AcceptanceCriteriaTests[criterion] = {
-        AcceptanceCriterion: criterion,
-        TestCases: [],
-      };
-    }
-
-    storyObj.AcceptanceCriteriaTests[criterion].TestCases.push({
-      TestCaseId:      cellToHtml(cells[2]).trim(),
-      TestCaseTitle:   cellToHtml(cells[3]).trim(),
-      Description:     cellToHtml(cells[4]).trim(),
-      Preconditions:   cellToHtml(cells[5]).split("\n").map((s: string) => s.trim()).filter(Boolean),
-      TestData:        cellToHtml(cells[6]).split("\n").map((s: string) => s.trim()).filter(Boolean),
-      TestSteps:       cellToHtml(cells[7]).split("\n").map((s: string) => s.trim()).filter(Boolean),
-      ExpectedResults: cellToHtml(cells[8]).trim(),
-      ActualResults:   hidden.ActualResults || "",
-      PassFail:        hidden.PassFail      || "",
-    });
-  }
-
-  const requirements = Object.values(reqMap).map((req: any) => ({
-    req_id: req.req_id,
-    UserStories: Object.values(req.UserStories).map((story: any) => ({
-      userstory_id: story.userstory_id,
-      AcceptanceCriteriaTests: Object.values(story.AcceptanceCriteriaTests),
-    })),
-  }));
-
-  return { Requirements: requirements };
-};
-
-// ============================================================
-// ACTION LOG
-// ============================================================
-
-const AL_COLUMNS = [
-  { key: "Action_Item", label: "Action Item" },
-  { key: "Requestor",   label: "Requestor" },
-  { key: "Owner",       label: "Owner" },
-  { key: "Status",      label: "Status" },
-  { key: "Priority",    label: "Priority" },
-  { key: "Start_Date",  label: "Start Date" },
-  { key: "Due_Date",    label: "Due Date" },
-  { key: "Comments",    label: "Comments" },
-];
-
-export const actionLogToSlateValue = (data: any): Descendant[] => {
-  const items = data.Minutes_of_Meeting;
-  if (!items || items.length === 0)
-    return [{ type: "paragraph", children: [{ text: "" }] }];
-
-  const allRows = items.map((item: any) => ({
-    type: "table-row" as const,
-    children: AL_COLUMNS.map(({ key }) => ({
-      type: "table-cell" as const,
-      children: htmlToCellChildren(item[key] != null ? String(item[key]) : ""),
-    })),
-  }));
-
-  const headerRow = {
-    type: "table-row" as const,
-    children: AL_COLUMNS.map(({ label }) => ({
-      type: "table-cell" as const,
-      isHeader: true,
-      children: [{ type: "paragraph" as const, children: [{ text: label }] }],
-    })),
-  };
-
-  return [{
-    type: "table",
-    className: "editor-custom-table",
-    children: [headerRow, ...allRows],
-  }];
-};
-
-export const slateToActionLogJson = (nodes: Descendant[]): any => {
-  const tableNode = (nodes as any[]).find((n) => n.type === "table");
-  if (!tableNode) return { Minutes_of_Meeting: [] };
-
-  const minutes = tableNode.children.slice(1).map((row: any) => {
-    const result: Record<string, string> = {};
-    AL_COLUMNS.forEach(({ key }, i) => {
-      result[key] = cellToHtml(row.children[i]).trim();
-    });
-    return result;
-  });
-
-  return { Minutes_of_Meeting: minutes };
-};
-
-// ============================================================
-// SUMMARY (markdown text → Slate)
-// ============================================================
-
-export const summaryToSlateValue = (text: string): Descendant[] => {
-  if (!text || text.trim() === "")
-    return [{ type: "paragraph", children: [{ text: "" }] }];
-
-  let cleanText = text.trim();
-  if (cleanText.startsWith('"') && cleanText.endsWith('"')) {
-    try { cleanText = JSON.parse(cleanText); } catch { /* use as-is */ }
-  }
-  if (cleanText.includes("\\n")) cleanText = cleanText.replace(/\\n/g, "\n");
-  if (/^<[a-z][\s\S]*>/i.test(cleanText.trim())) return htmlToSlateNodes(cleanText);
-
-  const lines: string[]     = cleanText.split("\n");
-  const nodes: Descendant[] = [];
-  let currentListItems: Descendant[]          = [];
-  let currentListType: "bulleted-list" | null = null;
-
-  const flushList = () => {
-    if (currentListItems.length > 0 && currentListType) {
-      nodes.push({ type: currentListType, children: currentListItems as any });
-      currentListItems = [];
-      currentListType  = null;
-    }
-  };
-
-  const parseInlineMarks = (text: string): CustomText[] => {
-    const regexes: [RegExp, keyof CustomText][] = [
-      [/\*\*\*(.+?)\*\*\*/g, "bold"],
-      [/\*\*(.+?)\*\*/g,     "bold"],
-      [/[\*_](.+?)[\*_]/g,   "italic"],
-      [/~~(.+?)~~/g,         "strikethrough"],
-      [/<u>(.+?)<\/u>/gi,    "underline"],
-      [/`(.+?)`/g,           "code"],
-    ];
-    let parts: CustomText[] = [{ text }];
-    for (const [regex, prop] of regexes) {
-      const newParts: CustomText[] = [];
-      for (const part of parts) {
-        if (Object.keys(part).length > 1) { newParts.push(part); continue; }
-        let last = 0;
-        let match;
-        regex.lastIndex = 0;
-        while ((match = regex.exec(part.text)) !== null) {
-          if (match.index > last) newParts.push({ text: part.text.slice(last, match.index) });
-          newParts.push({ text: match[1], [prop]: true } as any);
-          last = regex.lastIndex;
-        }
-        if (last < part.text.length) newParts.push({ text: part.text.slice(last) });
-      }
-      parts = newParts;
-    }
-    return parts.length > 0 ? parts : [{ text: "" }];
-  };
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed === "") { flushList(); continue; }
-
-    const numberedHeadingMatch = trimmed.match(/^\d+\.\s+\*\*(.+?)\*\*\s*$/);
-    if (numberedHeadingMatch) {
-      flushList();
-      nodes.push({ type: "heading-five", children: [{ text: numberedHeadingMatch[1] }] });
-      continue;
-    }
-
-    const subHeadingMatch = trimmed.match(/^([A-Z][^-*].+):$/);
-    if (subHeadingMatch && !trimmed.startsWith("-") && !trimmed.startsWith("*") &&
-        subHeadingMatch[1].split(/\s+/).length <= 6) {
-      flushList();
-      nodes.push({ type: "paragraph", children: [{ text: subHeadingMatch[1], bold: true }] });
-      continue;
-    }
-
-    const bulletMatch = line.match(/^(\s*)([-*])\s+(.+)$/);
-    if (bulletMatch) {
-      const indent = bulletMatch[1].length >= 4 ? 1 : 0;
-      if (currentListType !== "bulleted-list") { flushList(); currentListType = "bulleted-list"; }
-      currentListItems.push({ type: "list-item", indent, children: parseInlineMarks(bulletMatch[3]) } as any);
-      continue;
-    }
-
-    flushList();
-    nodes.push({ type: "paragraph", children: parseInlineMarks(trimmed) });
-  }
-
-  flushList();
-  return nodes.length > 0 ? nodes : [{ type: "paragraph", children: [{ text: "" }] }];
-};
-
-const leafToMarkdown = (node: any): string => {
-  if (!node || !("text" in node)) return "";
-  let t = node.text as string;
-  if (!t) return "";
-  if (node.code)          t = `\`${t}\``;
-  if (node.bold)          t = `**${t}**`;
-  if (node.italic)        t = `*${t}*`;
-  if (node.underline)     t = `<u>${t}</u>`;
-  if (node.strikethrough) t = `~~${t}~~`;
-  return t;
-};
-
-const childrenToMarkdown = (children: any[]): string =>
-  (children || []).map((c: any) =>
-    "text" in c ? leafToMarkdown(c) : childrenToMarkdown(c.children)).join("");
-
-export const slateToSummaryJson = (nodes: Descendant[]): any => {
-  const lines: string[]     = [];
-  let headingCounter = 0;
-  let prevType: string | null = null;
-
-  for (const node of nodes as any[]) {
-    const nodeType = node.type;
-    if (prevType && lines.length > 0) {
-      const tight = prevType === "heading-five" &&
-        (nodeType === "bulleted-list" || nodeType === "numbered-list");
-      if (!tight) lines.push("");
-    }
-    switch (nodeType) {
-      case "heading-five":
-        headingCounter++;
-        lines.push(`${headingCounter}. **${childrenToMarkdown(node.children)}**`);
-        break;
-      case "paragraph": {
-        const ch = node.children || [];
-        if (ch.length === 1 && ch[0].bold && !ch[0].italic && !ch[0].strikethrough &&
-            !ch[0].underline && !ch[0].code && ch[0].text &&
-            ch[0].text.split(/\s+/).length <= 6) {
-          lines.push(`${ch[0].text}:`);
-        } else {
-          lines.push(childrenToMarkdown(ch));
-        }
-        break;
-      }
-      case "bulleted-list":
-        for (const item of node.children || []) {
-          const indent = (item as any).indent || 0;
-          lines.push(indent >= 1
-            ? `     * ${childrenToMarkdown(item.children)}`
-            : `   - ${childrenToMarkdown(item.children)}`);
-        }
-        break;
-      case "numbered-list":
-        (node.children || []).forEach((item: any, idx: number) => {
-          lines.push(`${idx + 1}. ${childrenToMarkdown(item.children)}`);
-        });
-        break;
-      default: {
-        const t = childrenToMarkdown(node.children);
-        if (t) lines.push(t);
-        break;
-      }
-    }
-    prevType = nodeType;
-  }
-
-  return { response: lines.join("\n") };
-};
-
-// ============================================================
-// BRD — internal serialisation helpers
-// ============================================================
-
-/**
- * Serialize a single text leaf to HTML inline marks.
- */
-const serializeLeafBrd = (node: any): string => {
-  if (!node || !("text" in node)) return "";
-  let html = node.text as string;
-  if (!html) return "";
-  if (node.code)          html = `<code>${html}</code>`;
-  if (node.italic)        html = `<em>${html}</em>`;
-  if (node.bold)          html = `<strong>${html}</strong>`;
-  if (node.underline)     html = `<u>${html}</u>`;
-  if (node.strikethrough) html = `<s>${html}</s>`;
+const serializeLeaf = (leaf: CustomText): string => {
+  let html = leaf.text;
+  if (leaf.code)          html = `<code>${html}</code>`;
+  if (leaf.italic)        html = `<em>${html}</em>`;
+  if (leaf.bold)          html = `<strong>${html}</strong>`;
+  if (leaf.underline)     html = `<u>${html}</u>`;
+  if (leaf.strikethrough) html = `<s>${html}</s>`;
   return html;
 };
 
-/**
- * Fully block-aware + inline-mark-aware serialiser for BRD nodes.
- *
- * Handles:
- *   • All six heading levels with fontSize / indent / align style attrs
- *   • Paragraphs with fontSize / indent / align style attrs
- *   • List nodes (ul/ol/li) with indent / align style attrs
- *   • Inline marks (bold, italic, underline, code, strikethrough) on leaves
- *
- * This is the single function used for all content serialisation in
- * slateToBrdJson, replacing the old childrenToInlineHtml which only handled
- * inline marks and silently dropped every block-level style prop.
- */
-const serializeBlockNode = (node: any): string => {
-  if ("text" in node) return serializeLeafBrd(node);
+// =============================================================================
+// FULL TAG MAP  (Slate type → HTML tag)
+// =============================================================================
 
-  const inner = (node.children || []).map(serializeBlockNode).join("");
+const FULL_TAG_MAP: Record<string, string> = {
+  "heading-one":   "h1",
+  "heading-two":   "h2",
+  "heading-three": "h3",
+  "heading-four":  "h4",
+  "heading-five":  "h5",
+  "heading-six":   "h6",
+  "block-quote":   "blockquote",
+  "numbered-list": "ol",
+  "bulleted-list": "ul",
+  "list-item":     "li",
+  "paragraph":     "p",
+};
 
-  const styleProps: string[] = [];
-  if (node.fontSize)                        styleProps.push(`font-size:${node.fontSize}px`);
-  if (node.indent)                          styleProps.push(`padding-left:${node.indent * 24}px`);
-  if (node.align && node.align !== "left")  styleProps.push(`text-align:${node.align}`);
-  const s = styleProps.length ? ` style="${styleProps.join(";")}"` : "";
+// =============================================================================
+// UNIFIED SERIALISER  (single source of truth for Slate → HTML)
+// =============================================================================
 
-  switch (node.type) {
-    case "heading-one":   return `<h1${s}>${inner}</h1>`;
-    case "heading-two":   return `<h2${s}>${inner}</h2>`;
-    case "heading-three": return `<h3${s}>${inner}</h3>`;
-    case "heading-four":  return `<h4${s}>${inner}</h4>`;
-    case "heading-five":  return `<h5${s}>${inner}</h5>`;
-    case "heading-six":   return `<h6${s}>${inner}</h6>`;
-    case "paragraph":     return s ? `<p${s}>${inner}</p>` : inner;
-    case "bulleted-list": return `<ul${s}>${inner}</ul>`;
-    case "numbered-list": return `<ol${s}>${inner}</ol>`;
-    case "list-item":     return `<li${s}>${inner}</li>`;
-    default:              return s ? `<span${s}>${inner}</span>` : inner;
+const serializeNode = (node: Descendant): string => {
+  if ("text" in node) return serializeLeaf(node as CustomText);
+
+  const el    = node as any;
+  const inner = (el.children || []).map((c: Descendant) => serializeNode(c)).join("");
+  const style = buildStyleAttr(el);
+
+  const tag = FULL_TAG_MAP[el.type];
+  if (tag) return `<${tag}${style}>${inner}</${tag}>`;
+
+  switch (el.type) {
+    case "code-block":        return `<pre${style}><code>${inner}</code></pre>`;
+    case "table":             return `<table${style}>${inner}</table>`;
+    case "table-row":         return `<tr${style}>${inner}</tr>`;
+    case "table-cell":
+    case "table-cell-header": return `<td${style}>${inner}</td>`;
+    default:
+      return style ? `<div${style}>${inner}</div>` : inner;
   }
 };
 
-/** Extract plain text from children (used only for section-key detection). */
-const childrenToText = (children: any[]): string =>
-  (children || []).map((c: any) =>
-    "text" in c ? c.text || "" : childrenToText(c.children)).join("");
+// =============================================================================
+// PUBLIC SERIALISATION API
+// =============================================================================
 
-const extractBulletedListItems = (listNode: any): string[] =>
-  (listNode.children || []).map((item: any) => {
-    const full = serializeBlockNode(item);
-    return full.replace(/^<li[^>]*>([\s\S]*)<\/li>$/, "$1") || full;
-  });
+export const leafToHtml  = (leaf: CustomText): string  => serializeLeaf(leaf);
+export const nodeToHtml  = (node: Descendant): string  => serializeNode(node);
+export const slateToHtml = (nodes: Descendant[]): string =>
+  nodes.map(serializeNode).join("\n");
 
-const extractTableAsArray = (tableNode: any): any[] => {
-  const rows = tableNode.children || [];
-  if (rows.length < 2) return [];
+export const cellToHtml = (cell: { children?: Descendant[] }): string =>
+  (cell.children || []).map(serializeNode).join("\n");
 
-  const headers = (rows[0].children || []).map((cell: any) =>
-    childrenToText(cell.children).replace(/ /g, "_"));
+export const cellToHtmlArray = (cell: { children?: Descendant[] }): string[] =>
+  (cell.children || []).map(serializeNode).filter((t) => t.trim().length > 0);
 
-  return rows.slice(1).map((row: any) => {
-    const obj: Record<string, any> = {};
-    (row.children || []).forEach((cell: any, i: number) => {
-      if (i >= headers.length) return;
-      const paragraphs = (cell.children || []).filter((c: any) => c.type === "paragraph");
-      if (paragraphs.length > 1) {
-        obj[headers[i]] = paragraphs.map((p: any) => serializeBlockNode(p));
-      } else {
-        obj[headers[i]] = (cell.children || []).map(serializeBlockNode).join("");
-      }
-    });
-    return obj;
-  });
-};
+// =============================================================================
+// HTML → SLATE  (deserialiser)
+// =============================================================================
 
-// ============================================================
-// BRD — brdToSlateValue
-// ============================================================
+export const htmlToLeaves = (html: string): CustomText[] => {
+  if (!html || html.trim() === "") return [{ text: "" }];
+  const leaves: CustomText[] = [];
+  const parser = new DOMParser();
+  const doc    = parser.parseFromString(html, "text/html");
 
-export const brdToSlateValue = (rawResponse: string): Descendant[] => {
-  let cleanRaw = typeof rawResponse === "string" ? rawResponse.trim() : rawResponse;
-  if (typeof cleanRaw === "string") {
-    if (cleanRaw.startsWith('"') && cleanRaw.endsWith('"')) {
-      try { cleanRaw = JSON.parse(cleanRaw); } catch { /* use as-is */ }
+  const walk = (node: Node, marks: Partial<CustomText>) => {
+    if (node.nodeType === 3) {
+      const text = node.textContent;
+      if (text) leaves.push({ text, ...marks } as CustomText);
+      return;
     }
-    if (typeof cleanRaw === "string" && cleanRaw.includes("\\n"))
-      cleanRaw = cleanRaw.replace(/\\n/g, "\n");
-    if (typeof cleanRaw === "string" && /^<[a-z][\s\S]*>/i.test(cleanRaw.trim()))
-      return htmlToSlateNodes(cleanRaw);
-  }
-  const parsed = parseAgentResponse(cleanRaw);
-  return transformBRDDataToSlate(parsed);
-};
-
-// ============================================================
-// BRD — slateToBrdJson
-// ============================================================
-
-/**
- * HEADING STYLE PERSISTENCE — ROOT CAUSE & FIX
- *
- * The JSON structure uses heading plain-text as the object KEY
- * (e.g. "Executive_Summary", "Introduction"). This means there is no place
- * in the existing JSON shape to store styles (bold, italic, fontSize, indent,
- * align) that the user applied to those heading nodes.
- *
- * Fix: we store a separate `_headings` map inside the JSON object. For every
- * heading-five node encountered (both top-level section headings AND
- * sub-headings inside Executive Summary / Process Scope Summary), we
- * serialize the full node to HTML and store it under its plain-text key:
- *
- *   "_headings": {
- *     "Executive_Summary":  "<h5 style='font-size:20px'><strong>Executive Summary</strong></h5>",
- *     "Introduction":       "<h5 style='text-align:center'>Introduction</h5>",
- *     ...
- *   }
- *
- * On load (transformBRDDataToSlate in index.ts), if a `_headings` entry exists
- * for a section/sub-section key, we deserialise it back through htmlToSlateNodes
- * instead of creating a plain heading node. This perfectly restores every style
- * the user applied.
- */
-
-const BRD_SECTION_DISPLAY_TO_KEY: Record<string, string> = {
-  "Executive Summary":            "Executive_Summary",
-  "Stakeholders & Key Personnel": "Stakeholders_and_Key_Personnel",
-  "Goals & objectives":           "Goals_and_Objectives",
-  "Goals & Objectives":           "Goals_and_Objectives",
-  "Process Scope Summary":        "Process_Scope_Summary",
-  "Actors/Personas":              "Actors_Personas",
-  "Glossary":                     "Glossary",
-};
-
-const displayNameToKey = (name: string): string =>
-  BRD_SECTION_DISPLAY_TO_KEY[name] || name.replace(/ /g, "_");
-
-export const slateToBrdJson = (nodes: Descendant[]): any => {
-  const result: Record<string, any>   = {};
-  // _headings stores the serialised HTML for every heading node so that
-  // bold / italic / fontSize / indent / align all survive the round-trip.
-  const headings: Record<string, string> = {};
-
-  const nodeList = nodes as any[];
-  let i = 0;
-
-  const TOP_LEVEL_SECTIONS = [
-    "Executive_Summary",
-    "Stakeholders_and_Key_Personnel",
-    "Actors_Personas",
-    "Glossary",
-    "Goals_and_Objectives",
-    "Process_Scope_Summary",
-  ];
-
-  const safeCall = (fn: any, arg: any, fallback: any = []) => {
-    try { return typeof fn === "function" ? fn(arg) : fallback; }
-    catch (err) { console.error("Parser Error:", err); return fallback; }
+    if (node.nodeType === 1) {
+      const m   = { ...marks };
+      const tag = (node as Element).tagName.toLowerCase();
+      if (tag === "strong" || tag === "b") m.bold          = true;
+      if (tag === "em"     || tag === "i") m.italic        = true;
+      if (tag === "u")                     m.underline     = true;
+      if (tag === "code")                  m.code          = true;
+      if (tag === "s")                     m.strikethrough = true;
+      for (const child of Array.from(node.childNodes)) walk(child, m);
+    }
   };
 
-  while (i < nodeList.length) {
-    const node = nodeList[i];
+  for (const child of Array.from(doc.body.childNodes)) walk(child, {});
+  return leaves.length > 0 ? leaves : [{ text: "" }];
+};
 
-    // ── heading-five (BRD section titles) ───────────────────────────────────
-    if (node.type === "heading-five") {
-      const plainText  = childrenToText(node.children);
-      const sectionKey = displayNameToKey(plainText);
+// HTML tag → Slate type (all six heading levels included)
+const HTML_TAG_TO_SLATE: Record<string, string> = {
+  h1:         "heading-one",
+  h2:         "heading-two",
+  h3:         "heading-three",
+  h4:         "heading-four",
+  h5:         "heading-five",
+  h6:         "heading-six",
+  blockquote: "block-quote",
+  ol:         "numbered-list",
+  ul:         "bulleted-list",
+  li:         "list-item",
+};
 
-      // ── SAVE the heading's full HTML so styles survive reload ────────────
-      headings[sectionKey] = serializeBlockNode(node);
-      i++;
+const extractNodeProps = (el: HTMLElement): Record<string, any> => {
+  const props: Record<string, any> = {};
+  if (el.style.textAlign) {
+    props.align = el.style.textAlign;
+  }
+  if (el.style.paddingLeft) {
+    const px = parseInt(el.style.paddingLeft, 10);
+    if (!isNaN(px) && px > 0) props.indent = Math.round(px / 24);
+  }
+  if (el.style.fontSize) {
+    const size = parseInt(el.style.fontSize, 10);
+    if (!isNaN(size)) props.fontSize = size;
+  }
+  return props;
+};
 
-      // ── 1. EXECUTIVE SUMMARY ─────────────────────────────────────────────
-      if (sectionKey === "Executive_Summary") {
-        const execSummary: Record<string, string> = {};
+const deserialize = (domNode: Node, marks: Partial<CustomText> = {}): any[] => {
+  if (domNode.nodeType === 3) return [{ text: domNode.textContent || "", ...marks }];
+  if (domNode.nodeType !== 1) return [];
 
-        while (i < nodeList.length) {
-          const curr    = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
+  const el  = domNode as HTMLElement;
+  const tag = el.tagName.toLowerCase();
 
-          if (curr.type === "heading-one" ||
-              (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+  const newMarks = { ...marks };
+  if (tag === "strong" || tag === "b") newMarks.bold          = true;
+  if (tag === "em"     || tag === "i") newMarks.italic        = true;
+  if (tag === "u")                     newMarks.underline     = true;
+  if (tag === "code")                  newMarks.code          = true;
+  if (tag === "s" || tag === "del")    newMarks.strikethrough = true;
 
-          if (curr.type === "heading-five") {
-            // Sub-heading (Introduction, Problem Statement, …)
-            const subPlain = childrenToText(curr.children);
-            const subKey   = subPlain.replace(/ /g, "_");
+  // Extract block-level style props — spread onto EVERY matched Slate type
+  const nodeProps    = extractNodeProps(el);
+  const children     = Array.from(domNode.childNodes).flatMap((c) => deserialize(c, newMarks));
+  const safeChildren = children.length > 0 ? children : [{ text: "", ...newMarks }];
 
-            // Save sub-heading HTML for style restoration
-            headings[subKey] = serializeBlockNode(curr);
-            i++;
+  const slateType = HTML_TAG_TO_SLATE[tag];
+  if (slateType) return [{ type: slateType, ...nodeProps, children: safeChildren }];
 
-            let content = "";
-            while (i < nodeList.length &&
-                   !["heading-five", "heading-one"].includes(nodeList[i].type)) {
-              content += serializeBlockNode(nodeList[i]);
-              i++;
-            }
-            execSummary[subKey] = content;
-          } else {
-            i++;
-          }
-        }
-        result[sectionKey] = execSummary;
-      }
+  if (tag === "p")   return [{ type: "paragraph",  ...nodeProps, children: safeChildren }];
+  if (tag === "pre") return [{ type: "code-block", ...nodeProps, children: safeChildren }];
+  if (tag === "br")  return [{ text: "\n", ...newMarks }];
 
-      // ── 2. TABLE SECTIONS ────────────────────────────────────────────────
-      else if (["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"]
-               .includes(sectionKey)) {
-        let tableData: any[] = [];
-        while (i < nodeList.length) {
-          const curr    = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" ||
-              (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
-          if (curr.type === "table") {
-            tableData = safeCall(extractTableAsArray, curr, []);
-            i++;
-            break;
-          } else { i++; }
-        }
-        result[sectionKey] = tableData;
-      }
+  if (Object.keys(nodeProps).length > 0 && tag !== "body" && tag !== "html") {
+    return [{ type: "paragraph", ...nodeProps, children: safeChildren }];
+  }
 
-      // ── 3. GOALS & OBJECTIVES ────────────────────────────────────────────
-      else if (sectionKey === "Goals_and_Objectives") {
-        let listData: any[] = [];
-        while (i < nodeList.length) {
-          const curr    = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" ||
-              (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
-          if (curr.type === "bulleted-list") {
-            listData = safeCall(extractBulletedListItems, curr, []);
-            i++;
-            break;
-          } else { i++; }
-        }
-        result[sectionKey] = listData;
-      }
+  return children;
+};
 
-      // ── 4. PROCESS SCOPE SUMMARY ─────────────────────────────────────────
-      else if (sectionKey === "Process_Scope_Summary") {
-        const scopeObj: Record<string, any> = {};
+export const htmlToSlateNodes = (html: string): Descendant[] => {
+  if (!html || html.trim() === "")
+    return [{ type: "paragraph", children: [{ text: "" }] }];
 
-        while (i < nodeList.length) {
-          const curr    = nodeList[i];
-          const currKey = displayNameToKey(childrenToText(curr.children));
-          if (curr.type === "heading-one" ||
-              (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
+  const parser  = new DOMParser();
+  const doc     = parser.parseFromString(html, "text/html");
+  const nodes   = deserialize(doc.body);
 
-          if (curr.type === "heading-five") {
-            const subPlain = childrenToText(curr.children);
-            const subKey   = subPlain.replace(/ /g, "_");
-
-            // Save sub-heading HTML
-            headings[subKey] = serializeBlockNode(curr);
-            i++;
-
-            const subObj: Record<string, any> = {};
-            while (i < nodeList.length &&
-                   !["heading-five", "heading-one"].includes(nodeList[i].type)) {
-              const item = nodeList[i];
-              if (item.type === "paragraph") {
-                subObj["Summary"] = serializeBlockNode(item);
-              } else if (item.type === "bulleted-list") {
-                const listKey = subKey === "In_Scope" ? "High_Level_Requirements" : "Exclusions";
-                subObj[listKey] = safeCall(extractBulletedListItems, item, []);
-              }
-              i++;
-            }
-            scopeObj[subKey] = subObj;
-          } else { i++; }
-        }
-        result[sectionKey] = scopeObj;
-      }
-
-      // ── 5. FALLBACK (unknown heading-five) ───────────────────────────────
-      else {
-        const parts: string[] = [];
-        while (i < nodeList.length &&
-               !["heading-five", "heading-one"].includes(nodeList[i].type)) {
-          parts.push(serializeBlockNode(nodeList[i]));
-          i++;
-        }
-        result[sectionKey] = parts.join("\n");
-      }
-    }
-
-    // ── heading-one (metadata / citations) ──────────────────────────────────
-    else if (node.type === "heading-one") {
-      const key = childrenToText(node.children).replace(/ /g, "_");
-      i++;
-      if (i < nodeList.length && nodeList[i].type === "paragraph") {
-        const text = childrenToText(nodeList[i].children);
-        try { result[key] = JSON.parse(text); }
-        catch { result[key] = text; }
-        i++;
-      }
+  return nodes.reduce((acc: any[], node) => {
+    if ("text" in node) {
+      const last = acc[acc.length - 1];
+      if (last?.type === "paragraph") last.children.push(node);
+      else acc.push({ type: "paragraph", children: [node] });
     } else {
-      i++;
+      acc.push(node);
     }
-  }
+    return acc;
+  }, []);
+};
 
-  // Attach heading metadata only when there is something to store
-  if (Object.keys(headings).length > 0) {
-    result["_headings"] = headings;
-  }
-
-  return {
-    response: "```json\n" + JSON.stringify(result, null, 2) + "\n```",
-  };
+export const htmlToCellChildren      = (html: string): Descendant[] => htmlToSlateNodes(html);
+export const htmlArrayToCellChildren = (arr: string[]): Descendant[] => {
+  if (!arr || arr.length === 0)
+    return [{ type: "paragraph", children: [{ text: "" }] }];
+  return arr.flatMap((item) => htmlToSlateNodes(item));
 };
