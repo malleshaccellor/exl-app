@@ -3,6 +3,9 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   const headingsMap: Record<string, string> = {};
   const nodeList = nodes as any[];
 
+  const isHeading = (type: string) =>
+    typeof type === "string" && type.startsWith("heading");
+
   const getPlainText = (node: any) =>
     childrenToText(node.children).trim();
 
@@ -14,50 +17,39 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
   while (i < nodeList.length) {
     const node = nodeList[i];
 
-    if (node.type === "heading-five") {
-      const plain = getPlainText(node);
+    if (isHeading(node.type)) {
+      const plainText = getPlainText(node);
+      const normalizedKey = displayNameToKey(plainText);
       const styledKey = getStyledHtml(node);
-      const normalizedKey = displayNameToKey(plain);
 
-      headingsMap[normalizedKey] = plain;
+      headingsMap[normalizedKey] = plainText;
 
       i++;
 
-      // -------- EXECUTIVE SUMMARY --------
+      // ===============================
+      // EXECUTIVE SUMMARY
+      // ===============================
       if (normalizedKey === "Executive_Summary") {
         const execObj: Record<string, any> = {};
 
-        while (i < nodeList.length) {
+        while (i < nodeList.length && !isHeading(nodeList[i].type)) {
           const curr = nodeList[i];
 
-          if (curr.type === "heading-five") {
-            const subPlain = getPlainText(curr);
-            const subStyled = getStyledHtml(curr);
-            const subKey = subPlain.replace(/ /g, "_");
+          if (isHeading(curr.type)) break;
 
-            headingsMap[subKey] = subPlain;
-
-            i++;
-            let content = "";
-
-            while (
-              i < nodeList.length &&
-              nodeList[i].type !== "heading-five"
-            ) {
-              content += serializeBlockNode(nodeList[i]);
-              i++;
-            }
-
-            execObj[subStyled] = content;
-          } else {
-            break;
+          if (curr.type === "paragraph") {
+            execObj[plainText] = serializeBlockNode(curr);
           }
+
+          i++;
         }
 
         result[styledKey] = execObj;
       }
 
-      // -------- TABLE SECTIONS --------
+      // ===============================
+      // TABLE SECTIONS
+      // ===============================
       else if (
         ["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"]
           .includes(normalizedKey)
@@ -66,19 +58,24 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
 
         while (i < nodeList.length) {
           const curr = nodeList[i];
+
           if (curr.type === "table") {
             tableData = extractTableAsArray(curr);
             i++;
             break;
           }
-          if (curr.type === "heading-five") break;
+
+          if (isHeading(curr.type)) break;
+
           i++;
         }
 
         result[normalizedKey] = tableData;
       }
 
-      // -------- GOALS & OBJECTIVES --------
+      // ===============================
+      // GOALS & OBJECTIVES
+      // ===============================
       else if (normalizedKey === "Goals_and_Objectives") {
         let listData: string[] = [];
 
@@ -91,33 +88,36 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
             break;
           }
 
-          if (curr.type === "heading-five") break;
+          if (isHeading(curr.type)) break;
+
           i++;
         }
 
         result[normalizedKey] = listData;
       }
 
-      // -------- PROCESS SCOPE --------
+      // ===============================
+      // PROCESS SCOPE SUMMARY
+      // ===============================
       else if (normalizedKey === "Process_Scope_Summary") {
         const scopeObj: Record<string, any> = {};
 
         while (i < nodeList.length) {
           const curr = nodeList[i];
 
-          if (curr.type === "heading-five") {
+          if (isHeading(curr.type)) break;
+
+          if (isHeading(curr.type)) {
             const subPlain = getPlainText(curr);
             const subKey = subPlain.replace(/ /g, "_");
-
             headingsMap[subKey] = subPlain;
-
             i++;
 
             const subObj: Record<string, any> = {};
 
             while (
               i < nodeList.length &&
-              nodeList[i].type !== "heading-five"
+              !isHeading(nodeList[i].type)
             ) {
               const item = nodeList[i];
 
@@ -137,21 +137,23 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
             }
 
             scopeObj[subKey] = subObj;
-          } else {
-            break;
           }
+
+          i++;
         }
 
         result[normalizedKey] = scopeObj;
       }
 
-      // -------- DEFAULT SECTION --------
+      // ===============================
+      // DEFAULT SECTION
+      // ===============================
       else {
         let content = "";
 
         while (
           i < nodeList.length &&
-          nodeList[i].type !== "heading-five"
+          !isHeading(nodeList[i].type)
         ) {
           content += serializeBlockNode(nodeList[i]);
           i++;
@@ -164,10 +166,12 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
     }
   }
 
-  // attach heading map
   result["_headings"] = headingsMap;
 
   return {
-    response: "```json\n" + JSON.stringify(result, null, 2) + "\n```",
+    response:
+      "```json\n" +
+      JSON.stringify(result, null, 2) +
+      "\n```",
   };
 };
