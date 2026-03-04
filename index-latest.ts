@@ -1,200 +1,173 @@
-export const createSlateTable = (data: any[]): any => {
-  if (!data || data.length === 0)
-    return { type: "paragraph", children: [{ text: "" }] };
+export const slateToBrdJson = (nodes: Descendant[]): any => {
+  const result: Record<string, any> = {};
+  const headingsMap: Record<string, string> = {};
+  const nodeList = nodes as any[];
 
-  // Get headers from the first object's keys
-  const headers = Object.keys(data[0]);
+  const getPlainText = (node: any) =>
+    childrenToText(node.children).trim();
 
-  return {
-    type: "table" as const,
-    className: "editor-custom-table",
-    children: [
-      // HEADER ROW
-      {
-        type: "table-row" as const,
-        children: headers.map((header) => ({
-          type: "table-cell-header" as const,
-          children: [
-            {
-              type: "paragraph" as const,
-              children: [{ text: header.replace(/_/g, " "), bold: true }],
-            },
-          ],
-        })),
-      },
-      // DATA ROWS
-      ...data.map((row) => ({
-        type: "table-row" as const,
-        children: headers.map((key) => {
-          const val = row[key];
-          // Preserve arrays as multiple paragraphs (one per item)
-          if (Array.isArray(val)) {
-            return {
-              type: "table-cell" as const,
-              children: val.length > 0
-                ? val.map((item: string) => ({
-                    type: "paragraph" as const,
-                    children: [{ text: String(item) }],
-                  }))
-                : [{ type: "paragraph" as const, children: [{ text: "" }] }],
-            };
+  const getStyledHtml = (node: any) =>
+    serializeBlockNode(node);
+
+  let i = 0;
+
+  while (i < nodeList.length) {
+    const node = nodeList[i];
+
+    if (node.type === "heading-five") {
+      const plain = getPlainText(node);
+      const styledKey = getStyledHtml(node);
+      const normalizedKey = displayNameToKey(plain);
+
+      headingsMap[normalizedKey] = plain;
+
+      i++;
+
+      // -------- EXECUTIVE SUMMARY --------
+      if (normalizedKey === "Executive_Summary") {
+        const execObj: Record<string, any> = {};
+
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
+
+          if (curr.type === "heading-five") {
+            const subPlain = getPlainText(curr);
+            const subStyled = getStyledHtml(curr);
+            const subKey = subPlain.replace(/ /g, "_");
+
+            headingsMap[subKey] = subPlain;
+
+            i++;
+            let content = "";
+
+            while (
+              i < nodeList.length &&
+              nodeList[i].type !== "heading-five"
+            ) {
+              content += serializeBlockNode(nodeList[i]);
+              i++;
+            }
+
+            execObj[subStyled] = content;
+          } else {
+            break;
           }
-          return {
-            type: "table-cell" as const,
-            children: [
-              {
-                type: "paragraph" as const,
-                children: [{ text: String(val || "") }],
-              },
-            ],
-          };
-        }),
-      })),
-    ],
-  };
-};
+        }
 
-export const createSlateBulletedList = (items: string[]): any => {
-  return {
-    type: "bulleted-list" as const,
-    children: items.map((item) => ({
-      type: "list-item" as const,
-      children: [{ text: String(item) }],
-    })),
-  };
-};
+        result[styledKey] = execObj;
+      }
 
-export const createSlateNumberedList = (items: string[]): any => {
-  return {
-    type: "numbered-list" as const,
-    children: items.map((item) => ({
-      type: "list-item" as const,
-      children: [{ text: String(item) }],
-    })),
-  };
-};
+      // -------- TABLE SECTIONS --------
+      else if (
+        ["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"]
+          .includes(normalizedKey)
+      ) {
+        let tableData: any[] = [];
 
-export const transformBRDDataToSlate = (obj: any) => {
-  if (!obj) return [{ type: "paragraph", children: [{ text: "" }] }];
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
+          if (curr.type === "table") {
+            tableData = extractTableAsArray(curr);
+            i++;
+            break;
+          }
+          if (curr.type === "heading-five") break;
+          i++;
+        }
 
-  return Object.entries(obj).flatMap(([key, value]) => {
-    if (
-      key === "Executive_Summary" &&
-      typeof value === "object" &&
-      value !== null
-    ) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Executive Summary" }],
-      };
+        result[normalizedKey] = tableData;
+      }
 
-      const subNodes = Object.entries(value).flatMap(([subKey, subValue]) => [
-        {
-          type: "heading-six" as const,
-          children: [{ text: subKey.replace(/_/g, " ") }],
-        },
-        {
-          type: "paragraph" as const,
-          children: [{ text: String(subValue) }],
-        },
-      ]);
+      // -------- GOALS & OBJECTIVES --------
+      else if (normalizedKey === "Goals_and_Objectives") {
+        let listData: string[] = [];
 
-      return [sectionHeader, ...subNodes];
-    }
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
 
-    if (key === "Stakeholders_and_Key_Personnel" && Array.isArray(value)) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Stakeholders & Key Personnel" }],
-      };
+          if (curr.type === "bulleted-list") {
+            listData = extractBulletedListItems(curr);
+            i++;
+            break;
+          }
 
-      const tableNode = createSlateTable(value);
+          if (curr.type === "heading-five") break;
+          i++;
+        }
 
-      return [sectionHeader, tableNode];
-    }
+        result[normalizedKey] = listData;
+      }
 
-    if (key === "Goals_and_Objectives" && Array.isArray(value)) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Goals & objectives" }],
-      };
+      // -------- PROCESS SCOPE --------
+      else if (normalizedKey === "Process_Scope_Summary") {
+        const scopeObj: Record<string, any> = {};
 
-      const listNodes = createSlateBulletedList(value);
+        while (i < nodeList.length) {
+          const curr = nodeList[i];
 
-      return [sectionHeader, listNodes];
-    }
+          if (curr.type === "heading-five") {
+            const subPlain = getPlainText(curr);
+            const subKey = subPlain.replace(/ /g, "_");
 
-    if (key === "Process_Scope_Summary" && typeof value === "object" && value !== null) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Process Scope Summary" }],
-      };
+            headingsMap[subKey] = subPlain;
 
-      const scopeNodes = Object.entries(value).flatMap(
-        ([scopeKey, scopeValue]: [string, any]) => {
-          const scopeTitle = {
-            type: "heading-six" as const,
-            children: [{ text: scopeKey.replace(/_/g, " ") }],
-          };
+            i++;
 
-          // Process the content inside In_Scope / Out_of_Scope
-          const scopeContent = Object.entries(scopeValue as Record<string, any>).flatMap(
-            ([_subKey, subValue]: [string, any]) => {
-              // 1. If it's the list of requirements/exclusions (Array)
-              if (Array.isArray(subValue)) {
-                return [createSlateBulletedList(subValue)];
+            const subObj: Record<string, any> = {};
+
+            while (
+              i < nodeList.length &&
+              nodeList[i].type !== "heading-five"
+            ) {
+              const item = nodeList[i];
+
+              if (item.type === "paragraph") {
+                subObj["Summary"] = serializeBlockNode(item);
               }
 
-              // 2. If it's the Summary (String)
-              return [
-                {
-                  type: "paragraph" as const,
-                  children: [{ text: String(subValue) }],
-                },
-              ];
-            },
-          );
+              if (item.type === "bulleted-list") {
+                subObj[
+                  subKey === "In_Scope"
+                    ? "High_Level_Requirements"
+                    : "Exclusions"
+                ] = extractBulletedListItems(item);
+              }
 
-          return [scopeTitle, ...scopeContent];
-        },
-      );
+              i++;
+            }
 
-      return [sectionHeader, ...scopeNodes];
+            scopeObj[subKey] = subObj;
+          } else {
+            break;
+          }
+        }
+
+        result[normalizedKey] = scopeObj;
+      }
+
+      // -------- DEFAULT SECTION --------
+      else {
+        let content = "";
+
+        while (
+          i < nodeList.length &&
+          nodeList[i].type !== "heading-five"
+        ) {
+          content += serializeBlockNode(nodeList[i]);
+          i++;
+        }
+
+        result[normalizedKey] = content;
+      }
+    } else {
+      i++;
     }
+  }
 
-    if (key === "Glossary" && Array.isArray(value)) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Glossary" }],
-      };
+  // attach heading map
+  result["_headings"] = headingsMap;
 
-      const tableNode = createSlateTable(value);
-
-      return [sectionHeader, tableNode];
-    }
-
-    if (key === "Actors_Personas" && Array.isArray(value)) {
-      const sectionHeader = {
-        type: "heading-five" as const,
-        children: [{ text: "Actors/Personas" }],
-      };
-
-      const tableNode = createSlateTable(value);
-
-      return [sectionHeader, tableNode];
-    }
-
-    return [
-      { type: "heading-one" as const, children: [{ text: key }] },
-      {
-        type: "paragraph" as const,
-        children: [
-          {
-            text:
-              typeof value === "object" ? JSON.stringify(value) : String(value),
-          },
-        ],
-      },
-    ];
-  });
+  return {
+    response: "```json\n" + JSON.stringify(result, null, 2) + "\n```",
+  };
 };
