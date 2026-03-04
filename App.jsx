@@ -1,75 +1,78 @@
-import { htmlToSlateNodes, htmlToLeaves } from "./htmlConversion";
+import { htmlToSlateNodes } from "./htmlConversion";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Inline-HTML parser (full block + mark deserialisation) ───────────────────
+// FIX: was using htmlToLeaves() which only extracted inline marks and silently
+// dropped fontSize / indent / align / block structure.  Now uses
+// htmlToSlateNodes() which fully deserialises every CSS style.
 
-/**
- * Detect whether a string is block-level HTML (starts with a block tag).
- * Used to decide whether to use the full deserializer or inline-only.
- */
-const BLOCK_TAG_RE = /^\s*<(p|h[1-6]|ul|ol|li|blockquote|pre|div|table)[>\s]/i;
-
-/**
- * valueToNodes — converts a stored JSON string value into Slate nodes.
- *
- * - Block HTML  "<p style="...">…</p>"  → htmlToSlateNodes → full nodes WITH styles
- * - Inline HTML "<strong>…</strong>"     → htmlToLeaves    → marked text leaves
- * - Plain text  "hello"                  → single text leaf
- *
- * Always returns an array of valid Slate nodes (block or leaf).
- */
-const valueToNodes = (val: string): any[] => {
-  const s = (val ?? "").trim();
-  if (!s) return [{ text: "" }];
-  if (BLOCK_TAG_RE.test(s)) return htmlToSlateNodes(s);          // full block HTML
-  if (/<\/?[a-z][\s\S]*?>/i.test(s)) return htmlToLeaves(s);    // inline HTML only
-  return [{ text: s }];                                           // plain text
-};
-
-/**
- * blockNodes — same as valueToNodes but guarantees the result is block nodes.
- * When the value is plain text or inline HTML (leaves), wraps in a paragraph.
- * Used wherever we need valid table-cell / list-item children.
- */
-const blockNodes = (val: string): any[] => {
-  const nodes = valueToNodes(val);
-  // If the first node has "text" it's a leaf — wrap everything in a paragraph
-  if (nodes.length > 0 && "text" in nodes[0]) {
-    return [{ type: "paragraph", children: nodes }];
+const parseInlineHtml = (str: string): any[] => {
+  if (!str) return [{ text: "" }];
+  if (/<\/?[a-z][\s\S]*?>/i.test(str)) {
+    return htmlToSlateNodes(str);
   }
-  return nodes; // already block nodes (paragraphs / lists / etc.)
+  return [{ text: str }];
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Generic table / list builders (non-BRD, plain text values)
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Helper: turn a parsed-HTML result into paragraph *children* ──────────────
+// If htmlToSlateNodes returned a single paragraph node we unwrap it so the
+// leaves can be used directly as `children` of a caller-supplied paragraph.
+const htmlToParagraphChildren = (str: string): any[] => {
+  if (!str) return [{ text: "" }];
+  const nodes = parseInlineHtml(str);
+  if (nodes.length === 1 && nodes[0].type === "paragraph") {
+    return nodes[0].children ?? [{ text: "" }];
+  }
+  return nodes;
+};
+
+// ── Generic (non-BRD) table ──────────────────────────────────────────────────
 
 export const createSlateTable = (data: any[]): any => {
-  if (!data?.length) return { type: "paragraph", children: [{ text: "" }] };
+  if (!data || data.length === 0)
+    return { type: "paragraph", children: [{ text: "" }] };
+
   const headers = Object.keys(data[0]);
+
   return {
     type: "table" as const,
     className: "editor-custom-table",
     children: [
       {
         type: "table-row" as const,
-        children: headers.map((h) => ({
+        children: headers.map((header) => ({
           type: "table-cell-header" as const,
-          children: [{ type: "paragraph", children: [{ text: h.replace(/_/g, " "), bold: true }] }],
+          children: [
+            {
+              type: "paragraph" as const,
+              children: [{ text: header.replace(/_/g, " "), bold: true }],
+            },
+          ],
         })),
       },
       ...data.map((row) => ({
         type: "table-row" as const,
         children: headers.map((key) => {
           const val = row[key];
+          if (Array.isArray(val)) {
+            return {
+              type: "table-cell" as const,
+              children:
+                val.length > 0
+                  ? val.map((item: string) => ({
+                      type: "paragraph" as const,
+                      children: [{ text: String(item) }],
+                    }))
+                  : [{ type: "paragraph" as const, children: [{ text: "" }] }],
+            };
+          }
           return {
             type: "table-cell" as const,
-            children: Array.isArray(val)
-              ? val.length
-                ? val.map((item: string) => ({ type: "paragraph", children: [{ text: String(item) }] }))
-                : [{ type: "paragraph", children: [{ text: "" }] }]
-              : [{ type: "paragraph", children: [{ text: String(val ?? "") }] }],
+            children: [
+              {
+                type: "paragraph" as const,
+                children: [{ text: String(val || "") }],
+              },
+            ],
           };
         }),
       })),
@@ -81,7 +84,7 @@ export const createSlateBulletedList = (items: string[]): any => ({
   type: "bulleted-list" as const,
   children: items.map((item) => ({
     type: "list-item" as const,
-    children: [{ type: "paragraph", children: [{ text: String(item) }] }],
+    children: [{ text: String(item) }],
   })),
 });
 
@@ -89,137 +92,205 @@ export const createSlateNumberedList = (items: string[]): any => ({
   type: "numbered-list" as const,
   children: items.map((item) => ({
     type: "list-item" as const,
-    children: [{ type: "paragraph", children: [{ text: String(item) }] }],
+    children: [{ text: String(item) }],
   })),
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BRD-specific builders (values may be rich HTML from slateToBrdJson)
-// ─────────────────────────────────────────────────────────────────────────────
+// ── BRD table ────────────────────────────────────────────────────────────────
+// FIX: uses htmlToParagraphChildren / parseInlineHtml (backed by
+// htmlToSlateNodes) so fontSize, indent, align and inline marks all survive.
 
-/**
- * brdTable — builds a Slate table from BRD data.
- * Cell values may be HTML strings like "<p style="font-size:18px">…</p>"
- * or arrays of HTML strings. All formatting is preserved.
- */
-const brdTable = (data: any[]): any => {
-  if (!data?.length) return { type: "paragraph", children: [{ text: "" }] };
+const createBrdSlateTable = (data: any[]): any => {
+  if (!data || data.length === 0)
+    return { type: "paragraph", children: [{ text: "" }] };
+
   const headers = Object.keys(data[0]);
+
   return {
     type: "table" as const,
     className: "editor-custom-table",
     children: [
       {
         type: "table-row" as const,
-        children: headers.map((h) => ({
+        children: headers.map((header) => ({
           type: "table-cell-header" as const,
-          children: [{ type: "paragraph", children: [{ text: h.replace(/_/g, " "), bold: true }] }],
+          children: [
+            {
+              type: "paragraph" as const,
+              children: [{ text: header.replace(/_/g, " "), bold: true }],
+            },
+          ],
         })),
       },
       ...data.map((row) => ({
         type: "table-row" as const,
         children: headers.map((key) => {
           const val = row[key];
+
+          // Array → one paragraph per item, each fully deserialised
           if (Array.isArray(val)) {
-            // Each array item is an HTML string → deserialize each, concatenate as cell children
-            const children = val.length
-              ? val.flatMap((item: string) => blockNodes(String(item)))
-              : [{ type: "paragraph", children: [{ text: "" }] }];
-            return { type: "table-cell" as const, children };
+            return {
+              type: "table-cell" as const,
+              children:
+                val.length > 0
+                  ? val.map((item: string) => ({
+                      type: "paragraph" as const,
+                      children: htmlToParagraphChildren(String(item)),
+                    }))
+                  : [{ type: "paragraph" as const, children: [{ text: "" }] }],
+            };
           }
-          // Single HTML string → deserialize, must be block nodes
-          return { type: "table-cell" as const, children: blockNodes(String(val ?? "")) };
+
+          // String value — if it has block-level nodes use them directly
+          const parsed = parseInlineHtml(String(val || ""));
+          const hasBlocks = parsed.some(
+            (n: any) => n.type !== undefined && !("text" in n),
+          );
+          return {
+            type: "table-cell" as const,
+            children: hasBlocks
+              ? parsed
+              : [{ type: "paragraph" as const, children: parsed }],
+          };
         }),
       })),
     ],
   };
 };
 
-/**
- * brdBulletedList — builds a bulleted list from BRD data.
- * Each item may be an HTML string like "<p style="text-align:center">…</p>".
- * list-item children must be block nodes (paragraphs), never raw leaves.
- */
-const brdBulletedList = (items: string[]): any => ({
+// ── BRD bulleted list ────────────────────────────────────────────────────────
+// FIX: uses htmlToParagraphChildren so bold/italic/fontSize in item HTML is
+// preserved as Slate marks rather than being stripped.
+
+const createBrdBulletedList = (items: string[]): any => ({
   type: "bulleted-list" as const,
   children: items.map((item) => ({
     type: "list-item" as const,
-    children: blockNodes(String(item ?? "")),
+    children: htmlToParagraphChildren(String(item)),
   })),
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// transformBRDDataToSlate
-// ─────────────────────────────────────────────────────────────────────────────
+// ── transformBRDDataToSlate ──────────────────────────────────────────────────
 
 export const transformBRDDataToSlate = (obj: any): any[] => {
   if (!obj) return [{ type: "paragraph", children: [{ text: "" }] }];
 
   return Object.entries(obj).flatMap(([key, value]) => {
-
-    // ── Executive Summary ────────────────────────────────────────────────────
-    if (key === "Executive_Summary" && typeof value === "object" && value !== null) {
-      return [
-        { type: "heading-five" as const, children: [{ text: "Executive Summary" }] },
-        ...Object.entries(value).flatMap(([subKey, subVal]) => [
-          { type: "heading-five" as const, children: [{ text: subKey.replace(/_/g, " ") }] },
-          // subVal is block HTML — deserialize it fully so styles are preserved
-          ...blockNodes(String(subVal ?? "")),
-        ]),
-      ];
+    // ── Executive Summary ──────────────────────────────────────────────────
+    if (
+      key === "Executive_Summary" &&
+      typeof value === "object" &&
+      value !== null
+    ) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Executive Summary" }],
+      };
+      const subNodes = Object.entries(value).flatMap(
+        ([subKey, subValue]) => [
+          {
+            type: "heading-five" as const,
+            children: [{ text: subKey.replace(/_/g, " ") }],
+          },
+          {
+            type: "paragraph" as const,
+            // FIX: was parseInlineHtml(String(subValue)) with old htmlToLeaves
+            children: htmlToParagraphChildren(String(subValue)),
+          },
+        ],
+      );
+      return [sectionHeader, ...subNodes];
     }
 
-    // ── Stakeholders & Key Personnel ─────────────────────────────────────────
+    // ── Stakeholders ───────────────────────────────────────────────────────
     if (key === "Stakeholders_and_Key_Personnel" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Stakeholders & Key Personnel" }] },
-        brdTable(value),
+        {
+          type: "heading-five" as const,
+          children: [{ text: "Stakeholders & Key Personnel" }],
+        },
+        createBrdSlateTable(value),
       ];
     }
 
-    // ── Goals & Objectives ───────────────────────────────────────────────────
+    // ── Goals & Objectives ─────────────────────────────────────────────────
     if (key === "Goals_and_Objectives" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Goals & objectives" }] },
-        brdBulletedList(value),
+        {
+          type: "heading-five" as const,
+          children: [{ text: "Goals & objectives" }],
+        },
+        createBrdBulletedList(value),
       ];
     }
 
-    // ── Process Scope Summary ────────────────────────────────────────────────
-    if (key === "Process_Scope_Summary" && typeof value === "object" && value !== null) {
-      return [
-        { type: "heading-five" as const, children: [{ text: "Process Scope Summary" }] },
-        ...Object.entries(value).flatMap(([scopeKey, scopeVal]: [string, any]) => [
-          { type: "heading-five" as const, children: [{ text: scopeKey.replace(/_/g, " ") }] },
-          ...Object.entries(scopeVal as Record<string, any>).flatMap(([, subVal]: [string, any]) =>
-            Array.isArray(subVal)
-              ? [brdBulletedList(subVal)]
-              : blockNodes(String(subVal ?? "")),
-          ),
-        ]),
-      ];
+    // ── Process Scope Summary ──────────────────────────────────────────────
+    if (
+      key === "Process_Scope_Summary" &&
+      typeof value === "object" &&
+      value !== null
+    ) {
+      const sectionHeader = {
+        type: "heading-five" as const,
+        children: [{ text: "Process Scope Summary" }],
+      };
+      const scopeNodes = Object.entries(value).flatMap(
+        ([scopeKey, scopeValue]: [string, any]) => {
+          const scopeTitle = {
+            type: "heading-five" as const,
+            children: [{ text: scopeKey.replace(/_/g, " ") }],
+          };
+          const scopeContent = Object.entries(
+            scopeValue as Record<string, any>,
+          ).flatMap(([_subKey, subValue]: [string, any]) => {
+            if (Array.isArray(subValue)) {
+              return [createBrdBulletedList(subValue)];
+            }
+            return [
+              {
+                type: "paragraph" as const,
+                // FIX: full deserialisation preserves fontSize/align/indent
+                children: htmlToParagraphChildren(String(subValue)),
+              },
+            ];
+          });
+          return [scopeTitle, ...scopeContent];
+        },
+      );
+      return [sectionHeader, ...scopeNodes];
     }
 
-    // ── Glossary ─────────────────────────────────────────────────────────────
+    // ── Glossary ───────────────────────────────────────────────────────────
     if (key === "Glossary" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Glossary" }] },
-        brdTable(value),
+        {
+          type: "heading-five" as const,
+          children: [{ text: "Glossary" }],
+        },
+        createBrdSlateTable(value),
       ];
     }
 
-    // ── Actors / Personas ────────────────────────────────────────────────────
+    // ── Actors / Personas ──────────────────────────────────────────────────
     if (key === "Actors_Personas" && Array.isArray(value)) {
       return [
-        { type: "heading-five" as const, children: [{ text: "Actors/Personas" }] },
-        brdTable(value),
+        {
+          type: "heading-five" as const,
+          children: [{ text: "Actors/Personas" }],
+        },
+        createBrdSlateTable(value),
       ];
     }
 
-    // ── Fallback (unknown sections) ──────────────────────────────────────────
+    // ── Fallback ───────────────────────────────────────────────────────────
     return [
       { type: "heading-one" as const, children: [{ text: key }] },
-      ...blockNodes(typeof value === "object" ? JSON.stringify(value) : String(value ?? "")),
+      {
+        type: "paragraph" as const,
+        children: htmlToParagraphChildren(
+          typeof value === "object" ? JSON.stringify(value) : String(value),
+        ),
+      },
     ];
   });
 };
