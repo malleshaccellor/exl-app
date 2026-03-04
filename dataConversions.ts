@@ -383,18 +383,9 @@ export const slateToSummaryJson = (nodes: Descendant[]): any => {
 // BRD — serialisation helpers
 // ============================================================
 
-/**
- * Serialize a text leaf to HTML inline marks.
- *
- * FIX: removed `if (!html) return ""` — this was silently dropping leaves
- * whose text is an empty string but still carry marks (e.g. a bold empty
- * placeholder). We now always process marks regardless of text content.
- */
 const serializeLeafBrd = (node: any): string => {
   if (!node || !("text" in node)) return "";
   let html = node.text as string;
-  // FIX: do NOT early-return on empty text — the leaf may still carry marks
-  // that wrap adjacent content, and dropping it silently loses those marks.
   if (node.code)          html = `<code>${html}</code>`;
   if (node.italic)        html = `<em>${html}</em>`;
   if (node.bold)          html = `<strong>${html}</strong>`;
@@ -403,28 +394,11 @@ const serializeLeafBrd = (node: any): string => {
   return html;
 };
 
-/**
- * Apply any inline marks stored directly on a BLOCK node to its inner HTML.
- *
- * WHY THIS EXISTS:
- * Slate normally stores marks (bold/italic/etc.) on text leaf nodes, not on
- * block nodes. However some editor toolbar implementations (especially when
- * the user selects an entire heading and applies bold) store the mark as a
- * prop directly on the block node:
- *
- *   { type: "heading-five", bold: true, align: "center",
- *     children: [{ text: "Executive Summary" }] }   ← text leaf has NO bold
- *
- * In this case serializeLeafBrd correctly serialises the leaf as plain text
- * (no <strong>) and serializeBlockNode never sees bold on children — so the
- * mark is silently lost.
- *
- * Fix: after building `inner` from children, check the block node itself for
- * mark props and wrap `inner` in the appropriate HTML tags.
- */
+// Wrap inner HTML with any marks stored directly on the block node itself.
+// Some toolbar implementations set bold/italic on the block node rather than
+// on each child text leaf (e.g. when the user selects an entire heading).
 const applyBlockLevelMarks = (node: any, inner: string): string => {
   let html = inner;
-  // Apply in reverse nesting order (innermost first matches how browsers render)
   if (node.strikethrough) html = `<s>${html}</s>`;
   if (node.underline)     html = `<u>${html}</u>`;
   if (node.bold)          html = `<strong>${html}</strong>`;
@@ -433,35 +407,18 @@ const applyBlockLevelMarks = (node: any, inner: string): string => {
   return html;
 };
 
-/**
- * Fully block-aware + inline-mark-aware serialiser for BRD nodes.
- *
- * Correctly handles:
- *   • fontSize / indent / align as CSS style attrs on every block type
- *   • bold / italic / underline / code / strikethrough on text leaf children
- *   • bold / italic / underline etc. stored directly on the block node itself
- *     (produced by some toolbar implementations when selecting whole headings)
- */
 const serializeBlockNode = (node: any): string => {
-  // ── Text leaf ──────────────────────────────────────────────────────────────
   if ("text" in node) return serializeLeafBrd(node);
 
-  // ── Recurse into children first ────────────────────────────────────────────
   let inner = (node.children || []).map(serializeBlockNode).join("");
-
-  // ── FIX: apply any inline marks stored on the block node itself ────────────
-  // This covers the case where an editor toolbar applies bold/italic to a
-  // heading block node directly rather than to each child text leaf.
   inner = applyBlockLevelMarks(node, inner);
 
-  // ── Build CSS style attribute ──────────────────────────────────────────────
   const styleProps: string[] = [];
   if (node.fontSize)                       styleProps.push(`font-size:${node.fontSize}px`);
   if (node.indent)                         styleProps.push(`padding-left:${node.indent * 24}px`);
   if (node.align && node.align !== "left") styleProps.push(`text-align:${node.align}`);
   const s = styleProps.length ? ` style="${styleProps.join(";")}"` : "";
 
-  // ── Emit the correct HTML tag ──────────────────────────────────────────────
   switch (node.type) {
     case "heading-one":   return `<h1${s}>${inner}</h1>`;
     case "heading-two":   return `<h2${s}>${inner}</h2>`;
@@ -477,7 +434,6 @@ const serializeBlockNode = (node: any): string => {
   }
 };
 
-/** Plain text extraction — ONLY for section-key detection, never for display. */
 const childrenToText = (children: any[]): string =>
   (children || []).map((c: any) =>
     "text" in c ? c.text || "" : childrenToText(c.children)).join("");
@@ -544,8 +500,7 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
 
   const parsed = parseAgentResponse(cleanRaw);
 
-  // If caller passed the slateToBrdJson wrapper { response: "```json...```" }
-  // instead of the inner JSON object, unwrap it so _headings is accessible.
+  // Unwrap slateToBrdJson's { response: "```json...```" } envelope if present
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed) &&
       typeof parsed.response === "string" && Object.keys(parsed).length === 1) {
     try {
@@ -560,10 +515,38 @@ export const brdToSlateValue = (rawResponse: string): Descendant[] => {
 // ============================================================
 // BRD — slateToBrdJson
 // ============================================================
+//
+// HEADING STYLE PERSISTENCE STRATEGY
+// ────────────────────────────────────
+// Each section's styled heading HTML is stored in TWO places:
+//
+//  1. Inside the section value itself under the key "_title":
+//       "Executive_Summary": {
+//         "_title": "<h5 style='text-align:center'><strong>Executive Summary</strong></h5>",
+//         "Introduction": "...",
+//         ...
+//       }
+//     For flat sections (tables, lists) the section value becomes an object:
+//       "Stakeholders_and_Key_Personnel": {
+//         "_title": "<h5>...</h5>",
+//         "_data":  [ ...original array... ]
+//       }
+//
+//  2. In the top-level "_headings" map (kept for backward compatibility):
+//       "_headings": { "Executive_Summary": "<h5>...</h5>", ... }
+//
+// On load, transformBRDDataToSlate reads "_title" first, then "_headings" as
+// fallback, then falls back to a plain text heading.
+//
+// Sub-headings (Introduction, Problem Statement, etc.) are stored as:
+//   "Introduction": {
+//     "_title": "<h5 style='padding-left:24px'>Introduction</h5>",
+//     "_content": "<p>actual content...</p>"
+//   }
 
 export const slateToBrdJson = (nodes: Descendant[]): any => {
   const result:   Record<string, any>    = {};
-  const headings: Record<string, string> = {};
+  const headings: Record<string, string> = {}; // top-level _headings (backward compat)
 
   const nodeList = nodes as any[];
   let i = 0;
@@ -588,18 +571,15 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
     if (node.type === "heading-five") {
       const plainText  = childrenToText(node.children);
       const sectionKey = displayNameToKey(plainText);
+      const titleHtml  = serializeBlockNode(node); // full HTML with all styles + marks
 
-      // Serialize the full heading node to HTML.
-      // serializeBlockNode now handles BOTH:
-      //   • block-level style props (fontSize, indent, align) → style="…"
-      //   • inline marks on children (bold/italic on text leaves)
-      //   • inline marks stored on the block node itself (bold:true on heading)
-      headings[sectionKey] = serializeBlockNode(node);
+      headings[sectionKey] = titleHtml; // backward compat
       i++;
 
-      // ── 1. EXECUTIVE SUMMARY ───────────────────────────────────────────
+      // ── 1. EXECUTIVE SUMMARY ───────────────────────────────────────────────
       if (sectionKey === "Executive_Summary") {
-        const execSummary: Record<string, string> = {};
+        // Store title HTML directly inside the section object
+        const execSummary: Record<string, any> = { _title: titleHtml };
 
         while (i < nodeList.length) {
           const curr    = nodeList[i];
@@ -608,18 +588,25 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
               (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
 
           if (curr.type === "heading-five") {
-            const subPlain = childrenToText(curr.children);
-            const subKey   = subPlain.replace(/ /g, "_");
-            headings[subKey] = serializeBlockNode(curr);
+            const subPlain   = childrenToText(curr.children);
+            const subKey     = subPlain.replace(/ /g, "_");
+            const subTitleHtml = serializeBlockNode(curr);
+            headings[subKey]   = subTitleHtml;
             i++;
 
+            // Collect content after sub-heading
             let content = "";
             while (i < nodeList.length &&
                    !["heading-five", "heading-one"].includes(nodeList[i].type)) {
               content += serializeBlockNode(nodeList[i]);
               i++;
             }
-            execSummary[subKey] = content;
+
+            // Sub-section stored as { _title, _content } so both are visible in JSON
+            execSummary[subKey] = {
+              _title:   subTitleHtml,
+              _content: content,
+            };
           } else {
             i++;
           }
@@ -627,7 +614,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
         result[sectionKey] = execSummary;
       }
 
-      // ── 2. TABLE SECTIONS ─────────────────────────────────────────────
+      // ── 2. TABLE SECTIONS ──────────────────────────────────────────────────
       else if (["Stakeholders_and_Key_Personnel", "Actors_Personas", "Glossary"]
                .includes(sectionKey)) {
         let tableData: any[] = [];
@@ -641,10 +628,11 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
             i++; break;
           } else { i++; }
         }
-        result[sectionKey] = tableData;
+        // Store as { _title, _data } so title style is visible in JSON
+        result[sectionKey] = { _title: titleHtml, _data: tableData };
       }
 
-      // ── 3. GOALS & OBJECTIVES ─────────────────────────────────────────
+      // ── 3. GOALS & OBJECTIVES ──────────────────────────────────────────────
       else if (sectionKey === "Goals_and_Objectives") {
         let listData: any[] = [];
         while (i < nodeList.length) {
@@ -657,12 +645,12 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
             i++; break;
           } else { i++; }
         }
-        result[sectionKey] = listData;
+        result[sectionKey] = { _title: titleHtml, _data: listData };
       }
 
-      // ── 4. PROCESS SCOPE SUMMARY ──────────────────────────────────────
+      // ── 4. PROCESS SCOPE SUMMARY ───────────────────────────────────────────
       else if (sectionKey === "Process_Scope_Summary") {
-        const scopeObj: Record<string, any> = {};
+        const scopeObj: Record<string, any> = { _title: titleHtml };
 
         while (i < nodeList.length) {
           const curr    = nodeList[i];
@@ -671,12 +659,13 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
               (curr.type === "heading-five" && TOP_LEVEL_SECTIONS.includes(currKey))) break;
 
           if (curr.type === "heading-five") {
-            const subPlain = childrenToText(curr.children);
-            const subKey   = subPlain.replace(/ /g, "_");
-            headings[subKey] = serializeBlockNode(curr);
+            const subPlain     = childrenToText(curr.children);
+            const subKey       = subPlain.replace(/ /g, "_");
+            const subTitleHtml = serializeBlockNode(curr);
+            headings[subKey]   = subTitleHtml;
             i++;
 
-            const subObj: Record<string, any> = {};
+            const subObj: Record<string, any> = { _title: subTitleHtml };
             while (i < nodeList.length &&
                    !["heading-five", "heading-one"].includes(nodeList[i].type)) {
               const item = nodeList[i];
@@ -694,7 +683,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
         result[sectionKey] = scopeObj;
       }
 
-      // ── 5. FALLBACK ───────────────────────────────────────────────────
+      // ── 5. FALLBACK ────────────────────────────────────────────────────────
       else {
         const parts: string[] = [];
         while (i < nodeList.length &&
@@ -702,7 +691,7 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
           parts.push(serializeBlockNode(nodeList[i]));
           i++;
         }
-        result[sectionKey] = parts.join("\n");
+        result[sectionKey] = { _title: titleHtml, _content: parts.join("\n") };
       }
     }
 
@@ -720,7 +709,6 @@ export const slateToBrdJson = (nodes: Descendant[]): any => {
     }
   }
 
-  // Always include _headings so transformBRDDataToSlate can restore styles on reload
   result["_headings"] = headings;
 
   return {
