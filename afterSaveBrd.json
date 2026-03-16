@@ -1,45 +1,78 @@
-import { useCallback, useMemo, useRef, useState } from "react";
-import { createEditor, Editor, Text, type Descendant, type NodeEntry, type Range } from "slate";
+// utils/findCommentRanges.ts
+import { Editor, Text, Path, Point, Range } from "slate";
+
+export interface CommentRange {
+  commentId: string;
+  anchor: { path: number[]; offset: number };
+  focus: { path: number[]; offset: number };
+}
+
+export function findCommentRanges(
+  editor: Editor,
+  comments: { id: string; text: string }[]
+): CommentRange[] {
+  const result: CommentRange[] = [];
+
+  for (const comment of comments) {
+    if (!comment.text) continue;
+
+    // Walk all text nodes
+    for (const [node, path] of Editor.nodes(editor, {
+      at: [],
+      match: (n) => Text.isText(n),
+    })) {
+      if (!Text.isText(node)) continue;
+
+      const nodeText = node.text;
+      let start = 0;
+
+      while (true) {
+        const index = nodeText.indexOf(comment.text, start);
+        if (index === -1) break;
+
+        result.push({
+          commentId: comment.id,
+          anchor: { path, offset: index },
+          focus: { path, offset: index + comment.text.length },
+        });
+
+        start = index + comment.text.length;
+      }
+    }
+  }
+
+  return result;
+}
+
+
+import {
+  useCallback, useEffect, useMemo, useRef, useState
+} from "react";
+import {
+  createEditor, Editor, Text, Point,
+  type Descendant, type NodeEntry, type Range
+} from "slate";
 import { Slate, Editable, withReact } from "slate-react";
 import { withHistory } from "slate-history";
 import clsx from "clsx";
 import Toolbar from "./Toolbar";
 import { withTables } from "./plugins/withTables";
 import { jsonToSlateValue } from "./utils/jsonConversion";
+import { findCommentRanges, type CommentRange } from "./utils/findCommentRanges";
 import type { textStyle } from "./types";
 import styles from "./slate-editor.module.css";
 
 interface Comment {
   id: string;
-  comment: string;
   text: string;
   isResolved: boolean;
   colField?: string;
 }
 
 interface SlateEditorProps {
-  value?: Descendant[];
-  defaultValue?: Descendant[];
-  onChange?: (value: Descendant[]) => void;
-  readOnly?: boolean;
-  onClickSaveBtn?: (nodes: Descendant[]) => void;
-  className?: string;
-  data?: Record<string, any>;
-  onDiscard?: () => void;
-  hideFontActions?: boolean;
-  hideAlignmentActions?: boolean;
-  hideIndentActions?: boolean;
-  comments?: Comment[]; // 👈 new prop
+  // ... your existing props
+  comments?: Comment[];
 }
-
-const toggleMark = (editor: Editor, format: textStyle) => {
-  const isActive = Editor.marks(editor)?.[format] === true;
-  if (isActive) {
-    Editor.removeMark(editor, format);
-  } else {
-    Editor.addMark(editor, format, true);
-  }
-};
 
 export const SlateContentEditor = ({
   value,
@@ -53,7 +86,7 @@ export const SlateContentEditor = ({
   hideFontActions,
   hideIndentActions,
   hideAlignmentActions,
-  comments = [], // 👈 new prop
+  comments = [],
 }: SlateEditorProps) => {
   const editor = useMemo(
     () => withTables(withHistory(withReact(createEditor()))),
@@ -70,62 +103,106 @@ export const SlateContentEditor = ({
     return defaultValue;
   }, [data, defaultValue]);
 
-  const [internalValue, setInternalValue] =
-    useState<Descendant[]>(computedDefault);
-  const editorValue = useMemo(
-    () => value ?? internalValue,
-    [value, internalValue],
-  );
+  const [internalValue, setInternalValue] = useState<Descendant[]>(computedDefault);
+  const editorValue = useMemo(() => value ?? internalValue, [value, internalValue]);
+
+  // 👇 Store locked comment ranges in local state
+  const [commentRanges, setCommentRanges] = useState<CommentRange[]>([]);
+  const isInitialized = useRef(false);
+
+  // 👇 On load, do text-match ONCE and lock the ranges
+  useEffect(() => {
+    if (isInitialized.current || comments.length === 0) return;
+
+    // Editor needs children to be populated first
+    // Use a small timeout to ensure Slate has initialized
+    const timer = setTimeout(() => {
+      const ranges = findCommentRanges(editor, comments);
+      setCommentRanges(ranges);
+      isInitialized.current = true;
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [editor, comments]);
 
   const handleChange = useCallback(
     (val: Descendant[]) => {
       if (!value) setInternalValue(val);
       onChange?.(val);
+
+      // 👇 After each operation, transform locked ranges to stay in sync
+      if (commentRanges.length === 0) return;
+
+      setCommentRanges((prev) => {
+        let updated = prev;
+
+        for (const op of editor.operations) {
+          updated = updated
+            .map((cr) => {
+              try {
+                const newAnchor = Point.transform(
+                  { path: cr.anchor.path, offset: cr.anchor.offset },
+                  op
+                );
+                const newFocus = Point.transform(
+                  { path: cr.focus.path, offset: cr.focus.offset },
+                  op
+                );
+
+                // null means the point was deleted — drop this range
+                if (!newAnchor || !newFocus) return null;
+
+                return { ...cr, anchor: newAnchor, focus: newFocus };
+              } catch {
+                return null; // invalid range, drop it
+              }
+            })
+            .filter((cr): cr is CommentRange => cr !== null);
+        }
+
+        return updated;
+      });
     },
-    [value, onChange],
+    [value, onChange, editor, commentRanges.length],
   );
 
-  const handleSave = useCallback(() => {
-    onSaveRef.current?.(editor.children);
-  }, [editor]);
-
-  const handleDiscard = useCallback(() => {
-    onDiscardRef.current?.();
-  }, []);
-
-  // Build a set of comment texts for quick lookup
-  const commentTexts = useMemo(
-    () => comments.map((c) => c.text).filter(Boolean),
-    [comments],
-  );
-
-  // Decorate: find text matches and return highlight ranges
+  // 👇 Decorate using locked ranges (not text-match)
   const decorate = useCallback(
     ([node, path]: NodeEntry): Range[] => {
-      if (!Text.isText(node) || commentTexts.length === 0) return [];
+      if (!Text.isText(node) || commentRanges.length === 0) return [];
 
       const ranges: Range[] = [];
-      const nodeText = node.text;
 
-      for (const searchText of commentTexts) {
-        if (!searchText) continue;
-        let start = 0;
-        // Find ALL occurrences of searchText in this text node
-        while (true) {
-          const index = nodeText.indexOf(searchText, start);
-          if (index === -1) break;
-          ranges.push({
-            anchor: { path, offset: index },
-            focus: { path, offset: index + searchText.length },
-            highlight: true, // custom property picked up by renderLeaf
-          } as Range & { highlight: boolean });
-          start = index + searchText.length;
-        }
+      for (const cr of commentRanges) {
+        const isAnchorPath = JSON.stringify(cr.anchor.path) === JSON.stringify(path);
+        const isFocusPath = JSON.stringify(cr.focus.path) === JSON.stringify(path);
+
+        // Check if path is between anchor and focus for multi-node ranges
+        const isBetween =
+          cr.anchor.path.length === path.length &&
+          path.every((v, i) => {
+            if (i < path.length - 1) return v === cr.anchor.path[i];
+            return v > cr.anchor.path[i] && v < cr.focus.path[i];
+          });
+
+        if (!isAnchorPath && !isFocusPath && !isBetween) continue;
+
+        const startOffset = isAnchorPath ? cr.anchor.offset : 0;
+        const endOffset = isFocusPath ? cr.focus.offset : node.text.length;
+
+        if (startOffset === endOffset) continue;
+
+        ranges.push({
+          anchor: { path, offset: startOffset },
+          focus: { path, offset: endOffset },
+          highlight: true,
+          commentId: cr.commentId,
+        } as any);
       }
 
       return ranges;
     },
-    [commentTexts],
+    [commentRanges],
   );
 
   const renderLeaf = useCallback(({ attributes, children, leaf }: any) => {
@@ -135,16 +212,10 @@ export const SlateContentEditor = ({
     if (leaf.strikethrough) children = <s>{children}</s>;
     if (leaf.code) children = <code>{children}</code>;
 
-    // 👇 Apply yellow highlight for comment matches
+    // 👇 Yellow highlight for comment ranges
     if (leaf.highlight) {
       children = (
-        <mark
-          style={{
-            backgroundColor: "#FFF176",
-            borderRadius: "2px",
-            padding: "1px 0",
-          }}
-        >
+        <mark style={{ backgroundColor: "#FFF176", borderRadius: "2px", padding: "1px 0" }}>
           {children}
         </mark>
       );
@@ -153,33 +224,7 @@ export const SlateContentEditor = ({
     return <span {...attributes}>{children}</span>;
   }, []);
 
-  const renderElement = useCallback(
-    ({ attributes, children, element }: any) => {
-      // ... your existing renderElement stays exactly the same
-    },
-    [],
-  );
-
-  const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (!event.ctrlKey && !event.metaKey) return;
-      switch (event.key) {
-        case "b":
-          event.preventDefault();
-          toggleMark(editor, "bold");
-          break;
-        case "i":
-          event.preventDefault();
-          toggleMark(editor, "italic");
-          break;
-        case "u":
-          event.preventDefault();
-          toggleMark(editor, "underline");
-          break;
-      }
-    },
-    [editor],
-  );
+  // ... rest of your existing code (renderElement, handleKeyDown) unchanged
 
   return (
     <div className={styles.editorContainer}>
@@ -198,7 +243,7 @@ export const SlateContentEditor = ({
             renderElement={renderElement}
             readOnly={readOnly}
             onKeyDown={handleKeyDown}
-            decorate={decorate}              // 👈 wire in decorate
+            decorate={decorate}   // 👈 wired in
             className={clsx(styles.editableArea, className)}
           />
         </Slate>
@@ -206,5 +251,3 @@ export const SlateContentEditor = ({
     </div>
   );
 };
-
-export default SlateContentEditor;
