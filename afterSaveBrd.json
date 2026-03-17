@@ -1,3 +1,8 @@
+{
+    "top": 417.7578125,
+    "left": 874.734375
+}
+
 // utils/findCommentRanges.ts
 import { Editor, Text, Path, Point, Range } from "slate";
 
