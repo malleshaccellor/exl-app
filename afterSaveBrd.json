@@ -1,7 +1,14 @@
-{
-    "top": 417.7578125,
-    "left": 874.734375
-}
+colField: "User_Story_Description"
+comment: "Remove this line"
+createdAt: "2026-03-17T05:43:02.133Z"
+id: "b3de250a-9165-4ca7-b353-6f9c585de20a"
+isResolved: true
+position: {top: 391.4375, left: 635.8125}
+replies: []
+rowIndex: 10
+text: "As a developer, I want to store and version control all prompts so that I can reproduce specific results from previous prompt versions."
+useId: "4264311e-5347-4773-8545-ac7a32fad5d4"
+viewFlag: false
 
 // utils/findCommentRanges.ts
 import { Editor, Text, Path, Point, Range } from "slate";
