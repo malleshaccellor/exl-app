@@ -242,8 +242,8 @@ const SlateContentEditor = ({
   // (in activeCommentFunction) is enough to flip the active colour — no
   // document write, no ref gymnastics.
   //
-  // data-comment-id on <mark> is kept for the DOM-fallback scroll in
-  // activeCommentFunction.
+  // data-comment-id on <span> enables the DOM-fallback scroll in
+  // activeCommentFunction when the stored Slate range is stale.
   const renderLeaf = useCallback(
     ({ attributes, children, leaf }: any) => {
       if (leaf.bold)          children = <strong>{children}</strong>;
@@ -262,11 +262,13 @@ const SlateContentEditor = ({
       }
 
       // Persisted comment highlight.
-      // leaf.isActive is set by decorate() when leaf.commentId === activeCommentId,
-      // so clicking a sidebar item immediately applies the active colour.
+      // <span> is used intentionally instead of <mark> — the HTML <mark> element
+      // carries a browser-default yellow background that cannot be fully overridden
+      // by just adding a className. Using <span> means our CSS classes are the
+      // sole source of colour for both commentHighlight and activeHighlight.
       if (leaf.commentId) {
         children = (
-          <mark
+          <span
             data-comment-id={leaf.commentId}
             className={clsx(
               styles.commentHighlight,
@@ -274,7 +276,7 @@ const SlateContentEditor = ({
             )}
           >
             {children}
-          </mark>
+          </span>
         );
       }
 
@@ -544,14 +546,47 @@ const SlateContentEditor = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [clearCommentingState]);
 
-  // ── activeCommentFunction — sidebar comment click ──────────────────────────
-  // 1. setActiveCommentId(commentId) → decorate() re-runs with isActive:true
-  //    for matching leaves → renderLeaf applies styles.activeHighlight.
-  //    This is the entire active-highlight mechanism. No document write needed.
+  // ── findRangeByText — live range rehydration ──────────────────────────────
+  // When text is added or removed after a comment was created, the stored
+  // range's path/offset values become stale and Transforms.select throws (or
+  // selects the wrong span). This helper searches every Text leaf in the live
+  // document for one that contains the comment's original selectedText and
+  // returns a fresh, valid Range pointing to it.
   //
-  // 2. Scrolls the editor viewport to the highlighted text.
-  //    Primary:  ReactEditor.toDOMRange (fast, may throw if range is stale).
-  //    Fallback: querySelector on data-comment-id stamped in renderLeaf.
+  // It uses a simple substring search — good enough for comment highlighting.
+  // If the text was edited so heavily that the original string no longer exists,
+  // it returns null and we fall back to the querySelector scroll.
+  const findRangeByText = useCallback(
+    (searchText: string): Range | null => {
+      if (!searchText.trim()) return null;
+      for (const [node, path] of Editor.nodes(editor, {
+        at: [],
+        match: (n) => Text.isText(n),
+      })) {
+        const textNode = node as Text;
+        const idx = textNode.text.indexOf(searchText);
+        if (idx !== -1) {
+          return {
+            anchor: { path, offset: idx },
+            focus:  { path, offset: idx + searchText.length },
+          };
+        }
+      }
+      return null;
+    },
+    [editor],
+  );
+
+  // ── activeCommentFunction — sidebar comment click ──────────────────────────
+  // 1. setActiveCommentId(id) → decorate() re-runs with isActive:true on the
+  //    matching range → renderLeaf applies styles.activeHighlight.
+  //
+  // 2. Scrolls the editor to the highlighted text. Two-phase range resolution:
+  //    a. Try the stored range directly (works when text hasn't been edited).
+  //    b. If the stored range is stale, call findRangeByText() to locate the
+  //       original selectedText in the live document, then update storedComments
+  //       with the fresh range so future clicks work without rehydration.
+  //    c. If the text itself was deleted, fall back to data-comment-id querySelector.
   //
   // 3. Scrolls the sidebar card into view.
   const activeCommentFunction = useCallback(
@@ -561,29 +596,62 @@ const SlateContentEditor = ({
       if (!commentId) return;
 
       const target = storedComments.find((c: any) => c.id === commentId);
+      if (!target) return;
 
       // Step 2: scroll editor to the text
-      if (target?.range) {
+      const scrollToRange = (range: Range) => {
         try {
           ReactEditor.focus(editor);
-          Transforms.select(editor, target.range);
-
+          Transforms.select(editor, range);
           try {
-            // Primary path — toDOMRange maps Slate path → DOM node
-            const domRange = ReactEditor.toDOMRange(editor, target.range);
+            const domRange = ReactEditor.toDOMRange(editor, range);
             domRange.startContainer.parentElement?.scrollIntoView({
               behavior: "smooth",
               block: "center",
             });
           } catch {
-            // Fallback — find the <mark> stamped with data-comment-id.
-            // Always works as long as the highlight is currently rendered.
             document
-              .querySelector(`mark[data-comment-id="${commentId}"]`)
+              .querySelector(`[data-comment-id="${commentId}"]`)
               ?.scrollIntoView({ behavior: "smooth", block: "center" });
           }
-        } catch (e) {
-          console.warn("Could not scroll to comment range", e);
+        } catch {
+          document
+            .querySelector(`[data-comment-id="${commentId}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      };
+
+      if (target.range) {
+        // Phase a: try the stored range as-is
+        let rangeValid = false;
+        try {
+          // Editor.range throws if path is out of bounds — use it as a validity check
+          Editor.range(editor, target.range);
+          rangeValid = true;
+        } catch {
+          rangeValid = false;
+        }
+
+        if (rangeValid) {
+          scrollToRange(target.range);
+        } else {
+          // Phase b: stored range is stale — rehydrate from live document text
+          const freshRange = target.text
+            ? findRangeByText(target.text)        // text = the original selectedText
+            : null;
+
+          if (freshRange) {
+            // Persist the fresh range back so the next click is instant
+            setStoredComments((prev) =>
+              prev.map((c) => (c.id === commentId ? { ...c, range: freshRange } : c)),
+            );
+            scrollToRange(freshRange);
+          } else {
+            // Phase c: text no longer exists — scroll via DOM attribute
+            document
+              .querySelector(`[data-comment-id="${commentId}"]`)
+              ?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
         }
       }
 
@@ -594,7 +662,7 @@ const SlateContentEditor = ({
           ?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
     },
-    [editor, storedComments],
+    [editor, storedComments, findRangeByText],
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────
