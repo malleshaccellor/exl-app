@@ -285,12 +285,7 @@ const SlateContentEditor = ({
       // Persistent comment highlight applied via marks
       if (leaf.commentId) {
         children = (
-          <mark
-            className={clsx(
-              styles.commentHighlight,
-              leaf.commentId === activeCommentId && styles.activeHighlight,
-            )}
-          >
+          <mark className={styles.commentHighlight}>
             {children}
           </mark>
         );
@@ -298,7 +293,7 @@ const SlateContentEditor = ({
 
       return <span {...attributes}>{children}</span>;
     },
-    [activeCommentId],
+    [],
   );
 
   const renderElement = useCallback(
@@ -557,6 +552,9 @@ const SlateContentEditor = ({
           behavior: "smooth",
           block: "center",
         });
+        // Remove browser's default blue selection highlight after scrolling
+        Transforms.deselect(editor);
+        window.getSelection()?.removeAllRanges();
       } catch (e) {
         console.warn("Could not scroll to comment range", e);
       }
