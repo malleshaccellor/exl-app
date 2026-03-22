@@ -6,6 +6,7 @@ import {
   Range,
   Transforms,
   Text,
+  Node,
 } from "slate";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { withHistory } from "slate-history";
@@ -28,12 +29,28 @@ import {
 import FloatingCommentToolbar from "../FloatingCommentToolbar";
 import { v4 as uuid } from "uuid";
 
+// Shape passed to the parent on Save — updated range + selectedText per comment
+export interface UpdatedCommentRange {
+  id: string;
+  range: Range;
+  selectedText: string;
+}
+
 interface SlateEditorProps {
   value?: Descendant[];
   defaultValue?: Descendant[];
   onChange?: (value: Descendant[]) => void;
   readOnly?: boolean;
-  onClickSaveBtn?: (nodes: Descendant[]) => void;
+  /**
+   * Called when the user clicks Save.
+   * - `nodes`           — current editor content
+   * - `updatedComments` — every comment with its re-resolved range and
+   *                       the actual selected text as it now reads in the doc
+   */
+  onClickSaveBtn?: (
+    nodes: Descendant[],
+    updatedComments: UpdatedCommentRange[],
+  ) => void;
   className?: string;
   data?: Record<string, any>;
   onDiscard?: () => void;
@@ -93,22 +110,18 @@ const SlateContentEditor = ({
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
   const [selection, setSelection] = useState<EditorSelection | null>(null);
 
-  // FIX: tempRange is STATE (not just a ref) so updating it triggers decorate()
-  // to re-run and actually render the isTempHighlight span.
-  // A plain ref mutation is invisible to React — the highlight would never appear.
   const [tempRange, setTempRange] = useState<Range | null>(null);
-  // Ref kept in sync for synchronous reads inside callbacks (avoids stale closures)
   const activeSpanRef = useRef<Range | null>(null);
 
   const getCommentsData = useAppSelector((state) => state.comments.comments);
 
-  // ─── Helper: always update ref AND state together ───────────────────────────
+  // ─── Helper: keep ref + state in sync ───────────────────────────────────────
   const setActiveRange = useCallback((range: Range | null) => {
     activeSpanRef.current = range;
     setTempRange(range);
   }, []);
 
-  // ─── Mark Helpers ───────────────────────────────────────────────────────────
+  // ─── Mark Helpers ────────────────────────────────────────────────────────────
 
   const addCommentMark = useCallback(
     (range: Range, commentId: string) => {
@@ -143,7 +156,56 @@ const SlateContentEditor = ({
     [editor],
   );
 
-  // ─── Fetch comments ─────────────────────────────────────────────────────────
+  // ─── Resolve updated range + selectedText from live editor nodes ─────────────
+  /**
+   * For each stored comment, walk the editor tree to find all text leaves
+   * that still carry `commentId === id`. Reconstruct the tightest Range that
+   * spans those leaves and re-read the selected text from the current document.
+   *
+   * This means even if the user edited text inside a commented region, the
+   * saved range and selectedText will reflect the document as it is now.
+   */
+  const resolveCommentRanges = useCallback((): UpdatedCommentRange[] => {
+    return storedComments.reduce<UpdatedCommentRange[]>((acc, comment: any) => {
+      const matchingNodes = Array.from(
+        Editor.nodes(editor, {
+          at: [],
+          match: (n) => Text.isText(n) && (n as any).commentId === comment.id,
+        }),
+      );
+
+      if (matchingNodes.length === 0) return acc; // comment text was deleted
+
+      // Build the tightest range that covers all matching leaves
+      const firstEntry = matchingNodes[0];
+      const lastEntry = matchingNodes[matchingNodes.length - 1];
+      const [firstNode, firstPath] = firstEntry;
+      const [lastNode, lastPath] = lastEntry;
+
+      const updatedRange: Range = {
+        anchor: { path: firstPath, offset: 0 },
+        focus: {
+          path: lastPath,
+          offset: (lastNode as Text).text.length,
+        },
+      };
+
+      // Re-read the actual text from the editor (may differ from original if edited)
+      const selectedText = Editor.string(editor, updatedRange);
+
+      acc.push({ id: comment.id, range: updatedRange, selectedText });
+      return acc;
+    }, []);
+  }, [editor, storedComments]);
+
+  // ─── Save: pass nodes + updated comment ranges to parent ─────────────────────
+  const handleSave = useCallback(() => {
+    if (!onSaveRef.current) return;
+    const updatedComments = resolveCommentRanges();
+    onSaveRef.current(editor.children, updatedComments);
+  }, [editor, resolveCommentRanges]);
+
+  // ─── Fetch comments ──────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (artifactJobID) dispatch(fetchComments(artifactJobID));
@@ -164,7 +226,7 @@ const SlateContentEditor = ({
       dispatch(fetchComments(artifactJobID));
   }, [deletedCommentsData, updatedCommentData]);
 
-  // ─── Sync storedComments + marks ────────────────────────────────────────────
+  // ─── Sync storedComments + marks ─────────────────────────────────────────────
 
   useEffect(() => {
     if (getCommentsData?.jobId !== artifactJobID) {
@@ -206,7 +268,7 @@ const SlateContentEditor = ({
     setStoredComments(existingComments);
   }, [getCommentsData, artifactJobID]);
 
-  // ─── Editor value ────────────────────────────────────────────────────────────
+  // ─── Editor value ─────────────────────────────────────────────────────────────
 
   const onSaveRef = useRef(onClickSaveBtn);
   onSaveRef.current = onClickSaveBtn;
@@ -229,15 +291,11 @@ const SlateContentEditor = ({
     [value, onChange],
   );
 
-  const handleSave = useCallback(() => {
-    onSaveRef.current?.(editor.children);
-  }, [editor]);
-
   const handleDiscard = useCallback(() => {
     onDiscardRef.current?.();
   }, []);
 
-  // ─── Rendering ──────────────────────────────────────────────────────────────
+  // ─── Rendering ───────────────────────────────────────────────────────────────
 
   const renderLeaf = useCallback(
     ({ attributes, children, leaf }: any) => {
@@ -342,7 +400,7 @@ const SlateContentEditor = ({
     [],
   );
 
-  // ─── Keyboard shortcuts ──────────────────────────────────────────────────────
+  // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -356,7 +414,7 @@ const SlateContentEditor = ({
     [editor],
   );
 
-  // ─── Mouse selection → temp highlight ───────────────────────────────────────
+  // ─── Mouse selection → temp highlight ────────────────────────────────────────
 
   const handleMouseUp = () => {
     if (!isShowComments) return;
@@ -382,12 +440,10 @@ const SlateContentEditor = ({
       position: { left: lastRect.right, top: lastRect.bottom },
     });
 
-    // FIX: setActiveRange updates both ref AND tempRange state
-    // so decorate() re-runs and renders the isTempHighlight
     setActiveRange(slateSelection);
   };
 
-  // ─── Submit comment ──────────────────────────────────────────────────────────
+  // ─── Submit comment ───────────────────────────────────────────────────────────
 
   const sendComment = useCallback(
     (text: string) => {
@@ -423,15 +479,13 @@ const SlateContentEditor = ({
       }));
 
       setSelection(null);
-      setActiveRange(null); // clears ref + tempRange → removes temp highlight
+      setActiveRange(null);
       Transforms.deselect(editor);
     },
     [selection, artifactJobID, addCommentMark, editor, setActiveRange],
   );
 
-  // ─── Decorate: temp highlight only ──────────────────────────────────────────
-  // FIX: depend on `tempRange` (state), not `activeSpanRef` (ref).
-  // React only re-runs useCallback when state changes, not ref mutations.
+  // ─── Decorate: temp highlight only ───────────────────────────────────────────
 
   const decorate = useCallback(
     ([node, path]: any) => {
@@ -450,10 +504,10 @@ const SlateContentEditor = ({
 
       return ranges;
     },
-    [tempRange], // re-runs whenever tempRange state changes
+    [tempRange],
   );
 
-  // ─── Click-outside closes floating toolbar ───────────────────────────────────
+  // ─── Click-outside / Escape closes floating toolbar ──────────────────────────
 
   useEffect(() => {
     if (!selection) return;
@@ -483,7 +537,7 @@ const SlateContentEditor = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [editor, setActiveRange]);
 
-  // ─── Sidebar: scroll-to + activate comment ───────────────────────────────────
+  // ─── Sidebar: scroll-to + activate comment ────────────────────────────────────
 
   const activeCommentFunction = (commentId: string | undefined) => {
     setActiveCommentId(commentId);
@@ -512,7 +566,7 @@ const SlateContentEditor = ({
     });
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  // ─── Render ───────────────────────────────────────────────────────────────────
 
   return (
     <>
