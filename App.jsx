@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { createEditor, Editor, type Descendant, Range } from "slate";
+// import { createEditor, Editor, type Descendant ,Text} from "slate";
+import {
+  createEditor,
+  type Descendant,
+  Editor,
+  Range,
+  Transforms,
+  Text,
+} from "slate";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { withHistory } from "slate-history";
 import clsx from "clsx";
@@ -14,25 +22,18 @@ import type {
   repliesType,
   storedCommentsType,
 } from "../OutputGeneration/ActionLogTable";
-import { fetchComments } from "../../store/reducer/comments/action";
+import {
+  addComments,
+  fetchComments,
+} from "../../store/reducer/comments/action";
 import FloatingCommentToolbar from "../FloatingCommentToolbar";
-
-export type selectionType = {
-  position: {
-    left: number | string;
-    top: number | string;
-  };
-  text: string;
-  slateRange: Range;
-  // Rects of the selection relative to pageRef, used to draw highlight overlays
-  highlightRects: { top: number; left: number; width: number; height: number }[];
-};
+import { v4 as uuid } from "uuid";
 
 interface SlateEditorProps {
   value?: Descendant[];
   defaultValue?: Descendant[];
   onChange?: (value: Descendant[]) => void;
-  isPreview?: boolean;
+  readOnly?: boolean;
   onClickSaveBtn?: (nodes: Descendant[]) => void;
   className?: string;
   data?: Record<string, any>;
@@ -43,6 +44,17 @@ interface SlateEditorProps {
   isShowComments?: boolean;
   onCommentsWindowClose?: () => void;
   artifactJobID?: string;
+  mode?: boolean;
+}
+interface Comment {
+  id: string;
+  author: string;
+  text: string;
+  createdAt: string;
+  resolved: boolean;
+  replies: any[];
+  range: any; // Slate Range
+  selectedText: string;
 }
 
 const toggleMark = (editor: Editor, format: textStyle) => {
@@ -53,12 +65,11 @@ const toggleMark = (editor: Editor, format: textStyle) => {
     Editor.addMark(editor, format, true);
   }
 };
-
-export const SlateContentEditor = ({
+const SlateContentEditor = ({
   value,
   defaultValue = [],
   onChange,
-  isPreview,
+  readOnly,
   onClickSaveBtn,
   className,
   data,
@@ -69,19 +80,71 @@ export const SlateContentEditor = ({
   isShowComments = false,
   onCommentsWindowClose,
   artifactJobID,
+  mode = false,
 }: SlateEditorProps) => {
   const dispatch = useAppDispatch();
   const editor = useMemo(
     () => withTables(withHistory(withReact(createEditor()))),
     [],
   );
-  const pageRef = useRef<HTMLDivElement>(null);
-  const activeSpanRef = useRef<HTMLSpanElement | null>(null);
-  const [selection, setSelection] = useState<selectionType | null>(null);
-  const [storedComments, setStoredComments] = useState<storedCommentsType[]>([]);
+  // const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
+  //   [],
+  // );
+  // 1. Initial Value for Slate
+
+  // 2. Initial Value for Comments Sidebar
+  const [storedComments, setStoredComments] = useState<any[]>(() => {
+    const saved = localStorage.getItem("editor-comments");
+    return saved ? JSON.parse(saved) : [];
+  });
+  useEffect(() => {
+    const saved = localStorage.getItem("editor-comments");
+    // console.log(saved)
+    if (saved) {
+      setStoredComments(JSON.parse(saved));
+    }
+  }, [isShowComments]);
+
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
+  const [selection, setSelection] = useState<{
+    text: string;
+    position: { top: number; left: number };
+  } | null>(null);
+  const activeSpanRef = useRef<Range | null>(null);
 
   const getCommentsData = useAppSelector((state) => state.comments.comments);
+  const addCommentMark = (editor: Editor, range: Range, commentId: string) => {
+    // 1. Force the selection to the comment range
+    Transforms.select(editor, range);
+
+    // 2. Apply the mark and split the nodes at the range boundaries
+    // This ensures a new 'leaf' is created specifically for this comment
+    Transforms.setNodes(
+      editor,
+      { commentId },
+      {
+        at: range,
+        match: (n) => Text.isText(n),
+        split: true, // CRITICAL: This forces Slate to create a separate leaf for the highlight
+      },
+    );
+
+    // 3. Deselect to remove the browser's native blue highlight
+    Transforms.deselect(editor);
+  };
+
+  const removeCommentMark = (editor: Editor, commentId: string): void => {
+    const nodes = Array.from(
+      Editor.nodes(editor, {
+        at: [],
+        match: (n) => Text.isText(n) && (n as any).commentId === commentId,
+      }),
+    );
+
+    for (const [, path] of nodes) {
+      Transforms.unsetNodes(editor, "commentId", { at: path });
+    }
+  };
 
   useEffect(() => {
     if (artifactJobID) {
@@ -89,50 +152,48 @@ export const SlateContentEditor = ({
     }
   }, []);
 
-  useEffect(() => {
-    if (getCommentsData?.jobId !== artifactJobID) {
-      setStoredComments([]);
-      return;
-    }
-    const existingComments = getCommentsData?.data.map((com) => ({
-      id: com.id,
-      position: {
-        left: com.position.left,
-        top: com.position.top,
-      },
-      rowIndex: com.rowIndex,
-      colField: com.colField,
-      text: com.text,
-      comment: com.comment,
-      time: com.createdAt,
-      userId: com.useId,
-      isResolved: com.isResolved,
-      replies: com.replies.map((reply: repliesType) => ({
-        id: reply?.id,
-        text: reply?.text,
-        createdAt: reply?.createdAt,
-        useId: reply?.useId,
-      })),
-    }));
-    setStoredComments(existingComments);
-  }, [getCommentsData, artifactJobID]);
-
+  // useEffect(() => {
+  //   if (getCommentsData?.jobId !== artifactJobID) {
+  //     setStoredComments([]);
+  //     return;
+  //   }
+  //   const existingComments = getCommentsData?.data.map((com) => ({
+  //     id: com.id,
+  //     position: {
+  //       left: com.position.left,
+  //       top: com.position.top,
+  //     },
+  //     rowIndex: com.rowIndex,
+  //     colField: com.colField,
+  //     text: com.text,
+  //     comment: com.comment,
+  //     time: com.createdAt,
+  //     userId: com.useId,
+  //     isResolved: com.isResolved,
+  //     replies: com.replies.map((reply: repliesType) => ({
+  //       id: reply?.id,
+  //       text: reply?.text,
+  //       createdAt: reply?.createdAt,
+  //       useId: reply?.useId,
+  //     })),
+  //   }));
+  //   setStoredComments(existingComments);
+  // }, [getCommentsData, artifactJobID]);
   const deletedCommentsData = useAppSelector(
     (state) => state.comments.deleteComment,
   );
+
   const updatedCommentData = useAppSelector(
     (state) => state.comments.updateComment,
   );
   const uploadCommentData = useAppSelector(
     (state) => state.comments.addComment,
   );
-
   useEffect(() => {
     if (artifactJobID) {
       dispatch(fetchComments(artifactJobID));
     }
   }, [uploadCommentData?.data]);
-
   useEffect(() => {
     if (deletedCommentsData?.message === "OK" && artifactJobID) {
       dispatch(fetchComments(artifactJobID));
@@ -141,106 +202,6 @@ export const SlateContentEditor = ({
       dispatch(fetchComments(artifactJobID));
     }
   }, [deletedCommentsData, updatedCommentData]);
-
-  // ── Close FloatingCommentToolbar ────────────────────────────────────────────
-  const clearSelection = useCallback(() => {
-    setSelection(null);
-    window.getSelection()?.removeAllRanges();
-  }, []);
-
-  // Close on Escape key
-  useEffect(() => {
-    if (!selection) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") clearSelection();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selection, clearSelection]);
-
-  // Close on click outside the page container
-  useEffect(() => {
-    if (!selection) return;
-    const handleMouseDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-      // Keep open if click is inside the page or inside the floating toolbar
-      if (pageRef.current?.contains(target)) return;
-      // FloatingCommentToolbar should have a known class/id — adjust selector if needed
-      const toolbar = document.querySelector("[data-floating-comment-toolbar]");
-      if (toolbar?.contains(target)) return;
-      clearSelection();
-    };
-    // Use mousedown so it fires before the click that might re-open it
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [selection, clearSelection]);
-
-  // ── Selection highlight on mouseUp (preview + edit) ────────────────────────
-  const handleMouseUp = useCallback(
-    (e: React.MouseEvent) => {
-      // In preview, only capture selection when comments panel is open
-      if (isPreview && !isShowComments) return;
-
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        // User clicked somewhere without a selection — close the toolbar
-        setSelection(null);
-        return;
-      }
-
-      const selectedText = sel.toString().trim();
-
-      let slateRange: Range | null = null;
-      try {
-        slateRange = ReactEditor.toSlateRange(editor, sel, {
-          exactMatch: false,
-          suppressThrow: true,
-        });
-      } catch {
-        /* ignore */
-      }
-
-      if (!slateRange || Range.isCollapsed(slateRange)) return;
-
-      const domRange = sel.getRangeAt(0);
-      const pageEl = pageRef.current;
-      if (!pageEl) return;
-      const pageRect = pageEl.getBoundingClientRect();
-
-      // Collect all rects of the selection — each line segment is a separate rect.
-      // We render absolutely-positioned highlight divs for each rect so the
-      // highlight persists even after focus moves to the FloatingCommentToolbar.
-      const clientRects = Array.from(domRange.getClientRects());
-      const highlightRects = clientRects.map((r) => ({
-        top: r.top - pageRect.top,
-        left: r.left - pageRect.left,
-        width: r.width,
-        height: r.height,
-      }));
-
-      // Position the toolbar just below the last line of the selection
-      const lastRect =
-        clientRects.length > 0
-          ? clientRects[clientRects.length - 1]
-          : domRange.getBoundingClientRect();
-
-      const BOX_WIDTH = 250;
-      const boxTop = lastRect.bottom - pageRect.top + 10;
-      const rawLeft = lastRect.right - pageRect.left - BOX_WIDTH + 16;
-      const boxLeft = Math.max(
-        8,
-        Math.min(rawLeft, pageRect.width - BOX_WIDTH - 8),
-      );
-
-      setSelection({
-        position: { left: boxLeft, top: boxTop },
-        text: selectedText,
-        slateRange,
-        highlightRects,
-      });
-    },
-    [editor, isPreview, isShowComments],
-  );
 
   // Keep callbacks in refs to avoid stale closures
   const onSaveRef = useRef(onClickSaveBtn);
@@ -260,11 +221,21 @@ export const SlateContentEditor = ({
     [value, internalValue],
   );
 
+  // const handleChange = useCallback(
+  //   (val: Descendant[]) => {
+  //     if (!value) {
+  //       setInternalValue(val);
+  //     }
+  //     onChange?.(val);
+  //   },
+  //   [value, onChange],
+  // );
   const handleChange = useCallback(
     (val: Descendant[]) => {
       if (!value) {
         setInternalValue(val);
       }
+
       onChange?.(val);
     },
     [value, onChange],
@@ -278,14 +249,42 @@ export const SlateContentEditor = ({
     onDiscardRef.current?.();
   }, []);
 
-  const renderLeaf = useCallback(({ attributes, children, leaf }: any) => {
-    if (leaf.bold) children = <strong>{children}</strong>;
-    if (leaf.italic) children = <em>{children}</em>;
-    if (leaf.underline) children = <u>{children}</u>;
-    if (leaf.strikethrough) children = <s>{children}</s>;
-    if (leaf.code) children = <code>{children}</code>;
-    return <span {...attributes}>{children}</span>;
-  }, []);
+  const renderLeaf = useCallback(
+    ({ attributes, children, leaf }: any) => {
+      if (leaf.bold) children = <strong>{children}</strong>;
+      if (leaf.italic) children = <em>{children}</em>;
+      if (leaf.underline) children = <u>{children}</u>;
+      if (leaf.strikethrough) children = <s>{children}</s>;
+      if (leaf.code) children = <code>{children}</code>;
+
+      if (leaf.isTempHighlight) {
+        children = (
+          <span {...attributes} style={{ backgroundColor: "red" }}>
+            {children}
+          </span>
+        );
+      }
+
+      if (leaf.commentId) {
+        const isActive = leaf.isActive;
+
+        children = (
+          <mark
+            {...attributes}
+            className={clsx(
+              styles.commentHighlight,
+              isActive && styles.activeHighlight,
+            )}
+          >
+            {children}
+          </mark>
+        );
+      }
+
+      return <span {...attributes}>{children}</span>;
+    },
+    [activeCommentId],
+  ); // Add dependency to ensure re-render on click
 
   const renderElement = useCallback(
     ({ attributes, children, element }: any) => {
@@ -297,27 +296,64 @@ export const SlateContentEditor = ({
 
       switch (element.type) {
         case "heading-one":
-          return <h1 {...attributes} style={style}>{children}</h1>;
+          return (
+            <h1 {...attributes} style={style}>
+              {children}
+            </h1>
+          );
         case "heading-two":
-          return <h2 {...attributes} style={style}>{children}</h2>;
+          return (
+            <h2 {...attributes} style={style}>
+              {children}
+            </h2>
+          );
         case "heading-three":
-          return <h3 {...attributes} style={style}>{children}</h3>;
+          return (
+            <h3 {...attributes} style={style}>
+              {children}
+            </h3>
+          );
         case "heading-four":
-          return <h4 {...attributes} style={style}>{children}</h4>;
+          return (
+            <h4 {...attributes} style={style}>
+              {children}
+            </h4>
+          );
         case "heading-five":
           return (
-            <h5 {...attributes} style={style} className={element.className || "heading-five"}>
+            <h5
+              {...attributes}
+              style={style}
+              className={element.className || "heading-five"}
+            >
               {children}
             </h5>
           );
         case "heading-six":
-          return <h6 {...attributes} style={style}>{children}</h6>;
+          return (
+            <h6 {...attributes} style={style}>
+              {children}
+            </h6>
+          );
         case "bulleted-list":
-          return <ul {...attributes} style={style}>{children}</ul>;
+          return (
+            <ul {...attributes} style={style}>
+              {children}
+            </ul>
+          );
         case "numbered-list":
-          return <ol {...attributes} style={style}>{children}</ol>;
+          return (
+            <ol {...attributes} style={style}>
+              {children}
+            </ol>
+          );
         case "list-item":
-          return <li {...attributes} style={style}>{children}</li>;
+          return (
+            <li {...attributes} style={style}>
+              {children}
+            </li>
+          );
+
         case "block-quote":
           return (
             <blockquote
@@ -332,9 +368,17 @@ export const SlateContentEditor = ({
               {children}
             </blockquote>
           );
+
         case "code-block":
           return (
-            <pre {...attributes} style={{ background: "#f5f5f5", padding: 12, ...style }}>
+            <pre
+              {...attributes}
+              style={{
+                background: "#f5f5f5",
+                padding: 12,
+                ...style,
+              }}
+            >
               <code>{children}</code>
             </pre>
           );
@@ -345,23 +389,47 @@ export const SlateContentEditor = ({
             </table>
           );
         case "table-row":
-          return <tr {...attributes} style={style}>{children}</tr>;
+          return (
+            <tr {...attributes} style={style}>
+              {children}
+            </tr>
+          );
         case "table-cell-header":
-          return <th {...attributes} style={style}>{children}</th>;
+          return (
+            <th {...attributes} style={style}>
+              {children}
+            </th>
+          );
         case "table-cell":
           if (element.isHeader) {
-            return <th {...attributes} style={style}>{children}</th>;
+            return (
+              <th {...attributes} style={style}>
+                {children}
+              </th>
+            );
           }
-          return <td {...attributes} style={style}>{children}</td>;
+          return (
+            <td {...attributes} style={style}>
+              {children}
+            </td>
+          );
         case "paragraph":
           return (
-            <p {...attributes} style={{ ...style }} className={element.className || "paragraph"}>
+            <p
+              {...attributes}
+              style={{ ...style }}
+              className={element.className || "paragraph"}
+            >
               {children}
             </p>
           );
         default:
           return (
-            <p {...attributes} style={style} className={element.className || "paragraph"}>
+            <p
+              {...attributes}
+              style={style}
+              className={element.className || "paragraph"}
+            >
               {children}
             </p>
           );
@@ -391,6 +459,164 @@ export const SlateContentEditor = ({
     [editor],
   );
 
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (!isShowComments) return;
+
+    // Get the Slate selection instead of DOM selection
+    const { selection: slateSelection } = editor;
+
+    if (!slateSelection || Range.isCollapsed(slateSelection)) return;
+
+    const selectedText = Editor.string(editor, slateSelection);
+    if (!selectedText.trim()) return;
+
+    const domSelection = window.getSelection();
+    const domRange = domSelection?.getRangeAt(0);
+    const rect = domRange?.getBoundingClientRect();
+
+    setSelection({
+      text: selectedText,
+      position: {
+        left: (rect?.right ?? 0) + window.scrollX + 8,
+        top: (rect?.top ?? 0) + window.scrollY,
+      },
+    });
+
+    // Store the SLATE selection, not the DOM range
+    activeSpanRef.current = slateSelection;
+  };
+
+  const sendComment = useCallback(
+    (text: string) => {
+      const range = activeSpanRef.current;
+      if (!range || !selection) return;
+
+      const commentId = uuid();
+
+      const newComment = {
+        id: commentId,
+        // userId: usersDetails?.id,
+        comment: text,
+        time: new Date().toISOString(),
+        range, // We bind using this range
+        selectedText: selection.text,
+      };
+
+      setStoredComments((prev) => {
+        const updated = [...prev, newComment];
+        // ONLY save the comments array to LocalStorage
+        localStorage.setItem(`editor-comments`, JSON.stringify(updated));
+        return updated;
+      });
+
+      // Clean up UI
+      setSelection(null);
+      activeSpanRef.current = null;
+      Transforms.deselect(editor);
+    },
+    [selection, artifactJobID],
+  );
+
+  const decorate = useCallback(
+    ([node, path]: any) => {
+      const ranges: any[] = [];
+      if (!Text.isText(node)) return ranges;
+
+      if (activeSpanRef.current) {
+        const intersection = Range.intersection(activeSpanRef.current, {
+          anchor: { path, offset: 0 },
+          focus: { path, offset: node.text.length },
+        });
+        if (intersection)
+          ranges.push({ ...intersection, isTempHighlight: true });
+      }
+
+      if (isShowComments) {
+        storedComments.forEach((comment: any) => {
+          if (comment.range) {
+            const intersection = Range.intersection(comment.range, {
+              anchor: { path, offset: 0 },
+              focus: { path, offset: node.text.length },
+            });
+
+            if (intersection) {
+              ranges.push({
+                ...intersection,
+                commentId: comment.id,
+                isActive: comment.id === activeCommentId,
+              });
+            }
+          }
+        });
+      }
+
+      return ranges;
+    },
+    [storedComments, activeCommentId, isShowComments],
+  );
+
+  useEffect(() => {
+    if (!selection) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const toolbar = document.getElementById("floating-toolbar");
+      if (!toolbar) return;
+      if (!toolbar.contains(e.target as Node)) {
+        setSelection(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [selection]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelection(null);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const activeCommentFunction = (commentId: string | undefined) => {
+    // 1. Update the state (this triggers the "glow" in the editor via decorate)
+    setActiveCommentId(commentId);
+
+    if (!commentId) return;
+
+    // 2. Find the comment to get its range
+    const target = storedComments.find((c: any) => c.id === commentId);
+
+    if (target?.range) {
+      try {
+        // 3. Focus and select the text in Slate
+        ReactEditor.focus(editor);
+        Transforms.select(editor, target.range);
+
+        // 4. Scroll the Slate editor to the text
+        const domRange = ReactEditor.toDOMRange(editor, target.range);
+        domRange.startContainer.parentElement?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      } catch (e) {
+        console.warn("Could not scroll to comment range", e);
+      }
+    }
+
+    // 5. Scroll the sidebar (existing logic)
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`comment-${commentId}`);
+      if (el) {
+        el.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    });
+  };
+
   return (
     <>
       <div
@@ -405,7 +631,7 @@ export const SlateContentEditor = ({
             initialValue={editorValue}
             onChange={handleChange}
           >
-            {!isPreview && (
+            {!mode && (
               <Toolbar
                 onClickSaveBtn={onClickSaveBtn ? handleSave : undefined}
                 buttonLabel="Save"
@@ -415,62 +641,28 @@ export const SlateContentEditor = ({
                 hideAlignmentActions={hideAlignmentActions}
               />
             )}
-
-            <div
-              ref={pageRef}
-              style={{ position: "relative" }}
+            <Editable
+              renderLeaf={renderLeaf}
+              renderElement={renderElement}
+              readOnly={readOnly}
+              decorate={decorate}
+              onKeyDown={handleKeyDown}
               onMouseUp={handleMouseUp}
-            >
-              <Editable
-                renderLeaf={renderLeaf}
-                renderElement={renderElement}
-                readOnly={isPreview}
-                onKeyDown={!isPreview ? handleKeyDown : undefined}
-                spellCheck={!isPreview}
-                autoFocus={!isPreview}
-                className={clsx(styles.editableArea, className)}
-              />
-
-              {/* ── Persistent selection highlight overlays ───────────────────
-                  One absolutely-positioned div per selection rect.
-                  pointer-events: none so they never interfere with interaction.
-                  Rendered behind the FloatingCommentToolbar (z-index 1 vs toolbar's higher z).
-                  Cleared when selection is set to null.                       */}
-              {selection?.highlightRects.map((rect, i) => (
-                <div
-                  key={i}
-                  aria-hidden="true"
-                  style={{
-                    position: "absolute",
-                    top: rect.top,
-                    left: rect.left,
-                    width: rect.width,
-                    height: rect.height,
-                    background: "rgba(99, 102, 241, 0.20)",
-                    borderBottom: "2px solid rgba(99, 102, 241, 0.6)",
-                    borderRadius: "1px",
-                    pointerEvents: "none",
-                    zIndex: 1,
-                  }}
-                />
-              ))}
-
-              {/* ── FloatingCommentToolbar ─────────────────────────────────── */}
-              {selection && (
-                <FloatingCommentToolbar
-                  position={selection.position}
-                  onAddComment={(text) => {
-                    if (!selection) return;
-                    sendComment(text);
-                    // Close toolbar after comment is added
-                    clearSelection();
-                  }}
-                />
-              )}
-            </div>
+              className={clsx(styles.editableArea, className)}
+            />
           </Slate>
+          {selection && (
+            <FloatingCommentToolbar
+              position={selection.position}
+              onAddComment={(text) => {
+                if (activeSpanRef.current) {
+                  sendComment(text);
+                  setSelection(null);
+                }
+              }}
+            />
+          )}
         </div>
-
         {isShowComments && (
           <CommentSidebar
             comments={storedComments}
@@ -479,6 +671,7 @@ export const SlateContentEditor = ({
             artifactJobID={artifactJobID}
             activeCommentId={activeCommentId}
             setActiveCommentId={setActiveCommentId}
+            activeCommentFunction={activeCommentFunction}
           />
         )}
       </div>
