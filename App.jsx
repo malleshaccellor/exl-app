@@ -34,12 +34,8 @@ import { v4 as uuid } from "uuid";
 // ---------------------------------------------------------------------------
 // Patches editor.onChange so every Slate operation (keystrokes, deletes,
 // pastes) immediately calls onSelectionChange with the live selection.
-//
-// WHY: Reading editor.selection inside React's onChange fires one render
-// after decorate() has already run — so the temp highlight lags one
-// keystroke. Patching onChange directly means setActiveRange is called
-// synchronously inside the same Slate operation, so decorate() always
-// sees the up-to-date range on the very next render.
+// This is the only way to keep activeRange in sync during edits — reading
+// editor.selection in React's onChange fires one render too late for decorate().
 // ---------------------------------------------------------------------------
 const withSelectionSync = (
   editor: Editor,
@@ -116,12 +112,8 @@ const SlateContentEditor = ({
   const dispatch = useAppDispatch();
 
   // ── Live selection tracking ──────────────────────────────────────────────
-  // activeRange must be STATE so decorate() re-runs whenever it changes.
-  // activeRangeRef mirrors it for callbacks that close over a stale snapshot.
   const [activeRange, setActiveRange] = useState<Range | null>(null);
   const activeRangeRef = useRef<Range | null>(null);
-
-  // Gate: only run withSelectionSync while the floating toolbar is open.
   const isCommentingActiveRef = useRef(false);
 
   const editor = useMemo(() => {
@@ -137,11 +129,9 @@ const SlateContentEditor = ({
   const [storedComments, setStoredComments] = useState<storedCommentsType[]>([]);
   const usersDetails = useAppSelector((state) => state.users.userDetails);
 
-  // activeCommentId — ID of the comment clicked in the sidebar.
-  // Changing this state causes decorate() to re-run (it's in its dep array),
-  // which flips the isActive flag on the matching range → renderLeaf applies
-  // styles.activeHighlight. This is the ONLY mechanism needed; no document
-  // mutation is required.
+  // activeCommentId drives the active highlight colour via decorate().
+  // When this changes, decorate() re-runs (it's in its dep array), which
+  // sets isActive:true on the matching leaf → renderLeaf applies activeHighlight.
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
 
   const [selection, setSelection] = useState<EditorSelection | null>(null);
@@ -167,24 +157,20 @@ const SlateContentEditor = ({
   }, [deletedCommentsData, updatedCommentData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sync API data → storedComments ────────────────────────────────────────
-  // storedComments is the single source of truth for ALL comment highlights.
-  // decorate() reads it directly — no document marks are written. This means:
-  //   • Adding a comment    → push to storedComments → decorate re-runs → highlight appears.
-  //   • Deleting a comment  → remove from storedComments → decorate re-runs → highlight gone.
-  //   • Activating a comment → setActiveCommentId → decorate re-runs → active colour applied.
-  // No addCommentMark / removeCommentMark document mutations needed at all.
   useEffect(() => {
     if (getCommentsData?.jobId !== artifactJobID) {
       setStoredComments([]);
       return;
     }
-
     const incoming: storedCommentsType[] = getCommentsData.data.map((com) => ({
       id: com.id,
       position: { left: com.position.left, top: com.position.top },
       rowIndex: com.rowIndex,
       colField: com.colField,
       text: com.text,
+      // selectedText is stored separately so range rehydration can find the
+      // original commented text even after edits shift the path/offset.
+      selectedText: com.text,
       range: com.range,
       comment: com.comment,
       time: com.createdAt,
@@ -197,7 +183,6 @@ const SlateContentEditor = ({
         useId: reply?.useId,
       })),
     }));
-
     setStoredComments(incoming);
   }, [getCommentsData, artifactJobID]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -231,19 +216,59 @@ const SlateContentEditor = ({
     onDiscardRef.current?.();
   }, []);
 
+  // ── findRangeByText ────────────────────────────────────────────────────────
+  // Walks every live Text leaf to find the first occurrence of searchText.
+  // Used to rehydrate a stale range after the document has been edited.
+  // Returns null if the text no longer exists in the document.
+  const findRangeByText = useCallback(
+    (searchText: string): Range | null => {
+      if (!searchText?.trim()) return null;
+      for (const [node, path] of Editor.nodes(editor, {
+        at: [],
+        match: (n) => Text.isText(n),
+      })) {
+        const idx = (node as Text).text.indexOf(searchText);
+        if (idx !== -1) {
+          return {
+            anchor: { path, offset: idx },
+            focus: { path, offset: idx + searchText.length },
+          };
+        }
+      }
+      return null;
+    },
+    [editor],
+  );
+
+  // ── isRangeValid ───────────────────────────────────────────────────────────
+  // Returns true only if both anchor and focus paths still exist in the live
+  // document. Editor.range throws when a path is out of bounds.
+  const isRangeValid = useCallback(
+    (range: Range): boolean => {
+      try {
+        Editor.range(editor, range);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [editor],
+  );
+
   // ── renderLeaf ─────────────────────────────────────────────────────────────
-  // THREE highlight states, all driven purely by decorate() flags on the leaf:
+  // All three highlight states come purely from decorate() flags on the leaf:
   //
-  //   leaf.isTempHighlight  → styles.commentSelection   (blue, while toolbar open)
-  //   leaf.commentId        → styles.commentHighlight   (yellow, persisted comment)
-  //   leaf.isActive = true  → styles.activeHighlight    (orange/bold, sidebar click)
+  //   leaf.isTempHighlight          → styles.commentSelection  (temp, toolbar open)
+  //   leaf.commentId                → styles.commentHighlight  (persisted comment)
+  //   leaf.commentId + leaf.isActive → styles.activeHighlight  (sidebar click)
   //
-  // Because ALL three come from decorate(), changing activeCommentId state
-  // (in activeCommentFunction) is enough to flip the active colour — no
-  // document write, no ref gymnastics.
+  // <span> is used (not <mark>) to prevent the browser's built-in UA stylesheet
+  // yellow background on <mark> from interfering with our CSS classes.
   //
-  // data-comment-id on <span> enables the DOM-fallback scroll in
-  // activeCommentFunction when the stored Slate range is stale.
+  // FIX — default blue selection removed:
+  // activeCommentFunction calls Transforms.deselect() after scrolling so
+  // editor.selection is cleared and Slate never renders its native blue
+  // selection caret on the commented text.
   const renderLeaf = useCallback(
     ({ attributes, children, leaf }: any) => {
       if (leaf.bold)          children = <strong>{children}</strong>;
@@ -252,7 +277,7 @@ const SlateContentEditor = ({
       if (leaf.strikethrough) children = <s>{children}</s>;
       if (leaf.code)          children = <code>{children}</code>;
 
-      // Temporary selection highlight (floating toolbar is open)
+      // Temporary selection highlight (shown while the floating toolbar is open)
       if (leaf.isTempHighlight) {
         children = (
           <span className={styles.commentSelection}>
@@ -261,11 +286,10 @@ const SlateContentEditor = ({
         );
       }
 
-      // Persisted comment highlight.
-      // <span> is used intentionally instead of <mark> — the HTML <mark> element
-      // carries a browser-default yellow background that cannot be fully overridden
-      // by just adding a className. Using <span> means our CSS classes are the
-      // sole source of colour for both commentHighlight and activeHighlight.
+      // Persisted comment highlight + active state.
+      // leaf.isActive is stamped by decorate() when leaf.commentId === activeCommentId.
+      // Changing activeCommentId state triggers decorate() re-run → leaf.isActive
+      // flips → renderLeaf re-renders with the correct highlight class.
       if (leaf.commentId) {
         children = (
           <span
@@ -282,8 +306,6 @@ const SlateContentEditor = ({
 
       return <span {...attributes}>{children}</span>;
     },
-    // Re-memoize when activeCommentId changes so renderLeaf picks up the new
-    // isActive value from the leaf (which decorate already stamped correctly).
     [activeCommentId],
   );
 
@@ -295,12 +317,11 @@ const SlateContentEditor = ({
         paddingLeft: element.indent ? `${element.indent * 24}px` : undefined,
         fontSize: element.fontSize ? `${element.fontSize}px` : undefined,
       };
-
       switch (element.type) {
-        case "heading-one":   return <h1 {...attributes} style={style}>{children}</h1>;
-        case "heading-two":   return <h2 {...attributes} style={style}>{children}</h2>;
-        case "heading-three": return <h3 {...attributes} style={style}>{children}</h3>;
-        case "heading-four":  return <h4 {...attributes} style={style}>{children}</h4>;
+        case "heading-one":    return <h1 {...attributes} style={style}>{children}</h1>;
+        case "heading-two":    return <h2 {...attributes} style={style}>{children}</h2>;
+        case "heading-three":  return <h3 {...attributes} style={style}>{children}</h3>;
+        case "heading-four":   return <h4 {...attributes} style={style}>{children}</h4>;
         case "heading-five":
           return (
             <h5 {...attributes} style={style} className={element.className || "heading-five"}>
@@ -315,12 +336,7 @@ const SlateContentEditor = ({
           return (
             <blockquote
               {...attributes}
-              style={{
-                borderLeft: "3px solid #ccc",
-                color: "#666",
-                ...style,
-                paddingLeft: style.paddingLeft || "12px",
-              }}
+              style={{ borderLeft: "3px solid #ccc", color: "#666", ...style, paddingLeft: style.paddingLeft || "12px" }}
             >
               {children}
             </blockquote>
@@ -337,18 +353,13 @@ const SlateContentEditor = ({
               <tbody {...attributes}>{children}</tbody>
             </table>
           );
-        case "table-row":        return <tr {...attributes} style={style}>{children}</tr>;
+        case "table-row":         return <tr {...attributes} style={style}>{children}</tr>;
         case "table-cell-header": return <th {...attributes} style={style}>{children}</th>;
         case "table-cell":
           return element.isHeader
             ? <th {...attributes} style={style}>{children}</th>
             : <td {...attributes} style={style}>{children}</td>;
         case "paragraph":
-          return (
-            <p {...attributes} style={style} className={element.className || "paragraph"}>
-              {children}
-            </p>
-          );
         default:
           return (
             <p {...attributes} style={style} className={element.className || "paragraph"}>
@@ -374,19 +385,21 @@ const SlateContentEditor = ({
   );
 
   // ── decorate ───────────────────────────────────────────────────────────────
-  // The single source of truth for ALL visual highlights in the editor.
+  // Single source of truth for ALL visual highlights.
   //
-  // It produces three kinds of decorated ranges on Text leaves:
+  // Produces three kinds of decorated ranges on Text leaves:
+  //   isTempHighlight          — blue preview while floating toolbar is open
+  //   commentId                — base comment highlight colour
+  //   commentId + isActive:true — active colour when sidebar comment is clicked
   //
-  //   isTempHighlight          → blue preview while floating toolbar is open
-  //   commentId                → yellow highlight for every persisted comment
-  //   commentId + isActive:true → active (orange) highlight when sidebar clicked
-  //
-  // KEY INSIGHT: because isActive is computed here as (comment.id === activeCommentId),
-  // simply calling setActiveCommentId(id) is enough to switch the active highlight.
-  // Slate re-runs decorate() because activeCommentId is in its dependency array,
-  // and renderLeaf applies styles.activeHighlight when leaf.isActive is true.
-  // Zero document mutations required for the active highlight.
+  // FIX — highlight after edit:
+  // For each comment, we first check if its stored range is still valid.
+  // If it is stale (path out of bounds after edits), we call findRangeByText
+  // to locate the original selectedText in the live document and update
+  // storedComments with the fresh range. This means decorate itself drives
+  // range rehydration on every render — the highlight is always up to date.
+  const decorateRef = useRef<(entry: NodeEntry) => any[]>(() => []);
+
   const decorate = useCallback(
     ([node, path]: NodeEntry) => {
       const ranges: any[] = [];
@@ -401,40 +414,64 @@ const SlateContentEditor = ({
       if (activeRange) {
         try {
           const intersection = Range.intersection(activeRange, nodeRange);
-          if (intersection) {
-            ranges.push({ ...intersection, isTempHighlight: true });
-          }
+          if (intersection) ranges.push({ ...intersection, isTempHighlight: true });
         } catch {
-          // activeRange can be stale after undo — skip silently
+          // Stale activeRange after undo — skip
         }
       }
 
-      // 2. Persisted comment highlights + active state
+      // 2. Persisted comment highlights with stale-range rehydration
       if (isShowComments) {
         for (const comment of storedComments) {
-          if (!comment.range) continue;
+          // Determine the effective range — use stored range if valid,
+          // otherwise fall back to searching the live document by selectedText.
+          let effectiveRange: Range | null = null;
+
+          if (comment.range && isRangeValid(comment.range)) {
+            effectiveRange = comment.range;
+          } else {
+            // Stored range is stale (text was added/removed around it).
+            // Search the live document for the original selected text.
+            const freshRange = findRangeByText(comment.selectedText || comment.text);
+            if (freshRange) {
+              effectiveRange = freshRange;
+              // Persist the fresh range back into storedComments so:
+              //  a) Future decorate() calls skip rehydration (fast path)
+              //  b) activeCommentFunction uses the correct range for scrolling
+              // Use setTimeout to avoid calling setState during render.
+              setTimeout(() => {
+                setStoredComments((prev) =>
+                  prev.map((c) =>
+                    c.id === comment.id ? { ...c, range: freshRange } : c,
+                  ),
+                );
+              }, 0);
+            }
+          }
+
+          if (!effectiveRange) continue;
+
           try {
-            const intersection = Range.intersection(comment.range, nodeRange);
+            const intersection = Range.intersection(effectiveRange, nodeRange);
             if (intersection) {
               ranges.push({
                 ...intersection,
                 commentId: comment.id,
-                // This flag is what drives the active colour in renderLeaf.
-                // It updates automatically when activeCommentId state changes
-                // because activeCommentId is in this useCallback's dep array.
                 isActive: comment.id === activeCommentId,
               });
             }
           } catch {
-            // Stale stored range — skip silently
+            // Skip silently
           }
         }
       }
 
       return ranges;
     },
-    [storedComments, activeCommentId, activeRange, isShowComments],
+    [storedComments, activeCommentId, activeRange, isShowComments, isRangeValid, findRangeByText],
   );
+
+  decorateRef.current = decorate;
 
   // ── clearCommentingState ───────────────────────────────────────────────────
   const clearCommentingState = useCallback(() => {
@@ -446,14 +483,12 @@ const SlateContentEditor = ({
     Transforms.deselect(editor);
   }, [editor]);
 
-  // ── handleMouseUp — open the floating toolbar ──────────────────────────────
+  // ── handleMouseUp — open floating toolbar ─────────────────────────────────
   const handleMouseUp = useCallback(
     (_e: React.MouseEvent) => {
       if (!isShowComments) return;
-
       const { selection: slateSelection } = editor;
       if (!slateSelection || Range.isCollapsed(slateSelection)) return;
-
       const selectedText = Editor.string(editor, slateSelection);
       if (!selectedText.trim()) return;
 
@@ -461,17 +496,15 @@ const SlateContentEditor = ({
       if (!domSelection || domSelection.rangeCount === 0) return;
       const domRange = domSelection.getRangeAt(0);
       const clientRects = domRange.getClientRects();
-      const lastRect =
-        clientRects.length > 0
-          ? clientRects[clientRects.length - 1]
-          : domRange.getBoundingClientRect();
+      const lastRect = clientRects.length > 0
+        ? clientRects[clientRects.length - 1]
+        : domRange.getBoundingClientRect();
 
       setSelection({
         text: selectedText,
         position: { left: lastRect.right, top: lastRect.bottom },
       });
 
-      // Activate withSelectionSync so typing/deleting extends the temp highlight
       isCommentingActiveRef.current = true;
       activeRangeRef.current = slateSelection;
       setActiveRange(slateSelection);
@@ -480,8 +513,6 @@ const SlateContentEditor = ({
   );
 
   // ── sendComment ────────────────────────────────────────────────────────────
-  // Saves the range into storedComments — that's all that's needed for the
-  // highlight to appear. decorate() reads storedComments directly.
   const sendComment = useCallback(
     (text: string) => {
       const range = activeRangeRef.current;
@@ -489,16 +520,19 @@ const SlateContentEditor = ({
 
       const commentId = uuid();
 
-      const newComment: any = {
-        id: commentId,
-        comment: text,
-        time: new Date().toISOString(),
-        range,
-        selectedText: selection.text,
-      };
-
-      // Push into storedComments → decorate() re-runs → highlight appears
-      setStoredComments((prev) => [...prev, newComment]);
+      setStoredComments((prev) => [
+        ...prev,
+        {
+          id: commentId,
+          comment: text,
+          time: new Date().toISOString(),
+          range,
+          // Store the selected text so decorate() can rehydrate the range
+          // after edits shift the original path/offset values.
+          selectedText: selection.text,
+          text: selection.text,
+        } as any,
+      ]);
 
       dispatch(
         addComments({
@@ -524,14 +558,12 @@ const SlateContentEditor = ({
     [selection, artifactJobID, editor, clearCommentingState],
   );
 
-  // ── Close toolbar when clicking outside ────────────────────────────────────
+  // ── Close toolbar on outside click ────────────────────────────────────────
   useEffect(() => {
     if (!selection) return;
     const handleMouseDown = (e: MouseEvent) => {
       const toolbar = document.getElementById("floating-toolbar");
-      if (toolbar && !toolbar.contains(e.target as Node)) {
-        clearCommentingState();
-      }
+      if (toolbar && !toolbar.contains(e.target as Node)) clearCommentingState();
     };
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
@@ -546,63 +578,49 @@ const SlateContentEditor = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [clearCommentingState]);
 
-  // ── findRangeByText — live range rehydration ──────────────────────────────
-  // When text is added or removed after a comment was created, the stored
-  // range's path/offset values become stale and Transforms.select throws (or
-  // selects the wrong span). This helper searches every Text leaf in the live
-  // document for one that contains the comment's original selectedText and
-  // returns a fresh, valid Range pointing to it.
-  //
-  // It uses a simple substring search — good enough for comment highlighting.
-  // If the text was edited so heavily that the original string no longer exists,
-  // it returns null and we fall back to the querySelector scroll.
-  const findRangeByText = useCallback(
-    (searchText: string): Range | null => {
-      if (!searchText.trim()) return null;
-      for (const [node, path] of Editor.nodes(editor, {
-        at: [],
-        match: (n) => Text.isText(n),
-      })) {
-        const textNode = node as Text;
-        const idx = textNode.text.indexOf(searchText);
-        if (idx !== -1) {
-          return {
-            anchor: { path, offset: idx },
-            focus:  { path, offset: idx + searchText.length },
-          };
-        }
-      }
-      return null;
-    },
-    [editor],
-  );
-
   // ── activeCommentFunction — sidebar comment click ──────────────────────────
-  // 1. setActiveCommentId(id) → decorate() re-runs with isActive:true on the
-  //    matching range → renderLeaf applies styles.activeHighlight.
   //
-  // 2. Scrolls the editor to the highlighted text. Two-phase range resolution:
-  //    a. Try the stored range directly (works when text hasn't been edited).
-  //    b. If the stored range is stale, call findRangeByText() to locate the
-  //       original selectedText in the live document, then update storedComments
-  //       with the fresh range so future clicks work without rehydration.
-  //    c. If the text itself was deleted, fall back to data-comment-id querySelector.
+  // Three things happen in order:
   //
-  // 3. Scrolls the sidebar card into view.
+  // 1. setActiveCommentId(commentId)
+  //    → decorate() re-runs with isActive:true for matching leaves
+  //    → renderLeaf applies styles.activeHighlight
+  //    This is the entire active-colour mechanism — no document write needed.
+  //
+  // 2. Scroll the editor to the highlighted text.
+  //    Uses the comment's current range from storedComments (which decorate()
+  //    may have already rehydrated if the text was edited).
+  //    Falls back to querySelector('[data-comment-id]') if the range is unusable.
+  //
+  // 3. FIX — default blue selection removed:
+  //    After scrolling, Transforms.deselect() clears editor.selection so Slate
+  //    does not render its native blue selection caret over the comment text.
+  //
+  // 4. Scroll the sidebar card into view.
   const activeCommentFunction = useCallback(
     (commentId: string | undefined) => {
-      // Step 1: flip active colour via state → decorate → renderLeaf
+      // Step 1: flip active colour
       setActiveCommentId(commentId);
       if (!commentId) return;
 
       const target = storedComments.find((c: any) => c.id === commentId);
       if (!target) return;
 
-      // Step 2: scroll editor to the text
-      const scrollToRange = (range: Range) => {
+      // Resolve the best available range (storedComments may already have a
+      // fresh range if decorate() rehydrated it; otherwise try here too).
+      const resolveRange = (): Range | null => {
+        if (target.range && isRangeValid(target.range)) return target.range;
+        return findRangeByText(target.selectedText || target.text);
+      };
+
+      const range = resolveRange();
+
+      // Step 2 + 3: scroll then deselect
+      if (range) {
         try {
           ReactEditor.focus(editor);
           Transforms.select(editor, range);
+
           try {
             const domRange = ReactEditor.toDOMRange(editor, range);
             domRange.startContainer.parentElement?.scrollIntoView({
@@ -618,51 +636,30 @@ const SlateContentEditor = ({
           document
             .querySelector(`[data-comment-id="${commentId}"]`)
             ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        } finally {
+          // FIX: remove the native blue selection that Transforms.select creates.
+          // Deselecting after the scroll ensures the browser has already
+          // processed the scroll position before we clear the selection.
+          requestAnimationFrame(() => {
+            Transforms.deselect(editor);
+            window.getSelection()?.removeAllRanges();
+          });
         }
-      };
-
-      if (target.range) {
-        // Phase a: try the stored range as-is
-        let rangeValid = false;
-        try {
-          // Editor.range throws if path is out of bounds — use it as a validity check
-          Editor.range(editor, target.range);
-          rangeValid = true;
-        } catch {
-          rangeValid = false;
-        }
-
-        if (rangeValid) {
-          scrollToRange(target.range);
-        } else {
-          // Phase b: stored range is stale — rehydrate from live document text
-          const freshRange = target.text
-            ? findRangeByText(target.text)        // text = the original selectedText
-            : null;
-
-          if (freshRange) {
-            // Persist the fresh range back so the next click is instant
-            setStoredComments((prev) =>
-              prev.map((c) => (c.id === commentId ? { ...c, range: freshRange } : c)),
-            );
-            scrollToRange(freshRange);
-          } else {
-            // Phase c: text no longer exists — scroll via DOM attribute
-            document
-              .querySelector(`[data-comment-id="${commentId}"]`)
-              ?.scrollIntoView({ behavior: "smooth", block: "center" });
-          }
-        }
+      } else {
+        // Text no longer in document — scroll via DOM attribute only
+        document
+          .querySelector(`[data-comment-id="${commentId}"]`)
+          ?.scrollIntoView({ behavior: "smooth", block: "center" });
       }
 
-      // Step 3: scroll the sidebar card
+      // Step 4: scroll the sidebar card
       requestAnimationFrame(() => {
         document
           .getElementById(`comment-${commentId}`)
           ?.scrollIntoView({ behavior: "smooth", block: "center" });
       });
     },
-    [editor, storedComments, findRangeByText],
+    [editor, storedComments, isRangeValid, findRangeByText],
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -700,9 +697,7 @@ const SlateContentEditor = ({
           <FloatingCommentToolbar
             position={selection.position}
             onAddComment={(text) => {
-              if (activeRangeRef.current) {
-                sendComment(text);
-              }
+              if (activeRangeRef.current) sendComment(text);
             }}
           />
         )}
