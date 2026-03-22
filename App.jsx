@@ -440,17 +440,30 @@ const SlateContentEditor = ({
       }
 
       const domSelection = window.getSelection();
-      const rect = domSelection?.getRangeAt(0)?.getBoundingClientRect();
+      if (!domSelection || domSelection.rangeCount === 0) return;
 
-      // Store the Slate range in the ref so decorate picks it up
+      const domRange = domSelection.getRangeAt(0);
+
+      // getClientRects() gives one rect per wrapped line of the selection.
+      // Use the LAST rect so the toolbar anchors at the end of where the user
+      // finished dragging, not the start of the selection.
+      const clientRects = domRange.getClientRects();
+      const lastRect =
+        clientRects.length > 0
+          ? clientRects[clientRects.length - 1]
+          : domRange.getBoundingClientRect();
+
+      // Store the Slate range so decorate picks it up
       pendingRangeRef.current = slateSelection;
-      bumpDecorate(); // force immediate temp highlight
+      bumpDecorate();
 
+      // Use pure viewport-relative coords (no scrollX/Y) — the toolbar must
+      // use `position: fixed`. 8px gap to the right, 4px below the last line.
       setSelectionInfo({
         text: selectedText,
         position: {
-          left: (rect?.right ?? 0) + window.scrollX + 8,
-          top: (rect?.top ?? 0) + window.scrollY,
+          left: lastRect.right + 8,
+          top: lastRect.bottom + 4,
         },
       });
     },
