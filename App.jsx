@@ -87,40 +87,26 @@ const SlateContentEditor = ({
     () => withTables(withHistory(withReact(createEditor()))),
     [],
   );
-  const [storedComments, setStoredComments] = useState<storedCommentsType[]>([]);
-
+  const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
+    [],
+  );
   const usersDetails = useAppSelector((state) => state.users.userDetails);
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
   const [selection, setSelection] = useState<EditorSelection | null>(null);
-
-  // Stores the Slate Range while the user is making a temp selection
   const activeSpanRef = useRef<Range | null>(null);
-
   const getCommentsData = useAppSelector((state) => state.comments.comments);
 
-  // ─── Mark Helpers ──────────────────────────────────────────────────────────
-
-  /**
-   * Applies a persistent `commentId` mark to the text nodes within `range`.
-   * Uses `split: true` so Slate creates a dedicated leaf for the highlighted text.
-   */
   const addCommentMark = useCallback(
     (range: Range, commentId: string) => {
-      // Preserve the current editor selection so we can restore it afterward
       const previousSelection = editor.selection;
 
       Transforms.select(editor, range);
-      Transforms.setNodes(
-        editor,
-        { commentId } as Partial<Text>,
-        {
-          at: range,
-          match: (n) => Text.isText(n),
-          split: true,
-        },
-      );
+      Transforms.setNodes(editor, { commentId } as Partial<Text>, {
+        at: range,
+        match: (n) => Text.isText(n),
+        split: true,
+      });
 
-      // Restore previous selection (or deselect if there was none)
       if (previousSelection) {
         Transforms.select(editor, previousSelection);
       } else {
@@ -130,10 +116,6 @@ const SlateContentEditor = ({
     [editor],
   );
 
-  /**
-   * Removes the `commentId` mark from every text node that carries it,
-   * effectively un-highlighting that comment's text.
-   */
   const removeCommentMark = useCallback(
     (commentId: string) => {
       const nodes = Array.from(
@@ -149,8 +131,6 @@ const SlateContentEditor = ({
     },
     [editor],
   );
-
-  // ─── Fetch comments on mount & after mutations ──────────────────────────────
 
   useEffect(() => {
     if (artifactJobID) {
@@ -183,11 +163,8 @@ const SlateContentEditor = ({
     }
   }, [deletedCommentsData, updatedCommentData]);
 
-  // ─── Sync storedComments from Redux + apply/remove marks ───────────────────
-
   useEffect(() => {
     if (getCommentsData?.jobId !== artifactJobID) {
-      // Remove all comment marks when switching jobs
       storedComments.forEach((c: any) => removeCommentMark(c.id));
       setStoredComments([]);
       return;
@@ -212,7 +189,6 @@ const SlateContentEditor = ({
       })),
     }));
 
-    // Determine which comments were removed so we can clean up their marks
     const incomingIds = new Set(existingComments.map((c: any) => c.id));
     storedComments.forEach((prev: any) => {
       if (!incomingIds.has(prev.id)) {
@@ -220,7 +196,6 @@ const SlateContentEditor = ({
       }
     });
 
-    // Apply marks for all incoming comments that have a valid range
     existingComments.forEach((c: any) => {
       if (c.range) {
         try {
@@ -234,8 +209,6 @@ const SlateContentEditor = ({
     setStoredComments(existingComments);
   }, [getCommentsData, artifactJobID]);
 
-  // ─── Editor value management ────────────────────────────────────────────────
-
   const onSaveRef = useRef(onClickSaveBtn);
   onSaveRef.current = onClickSaveBtn;
   const onDiscardRef = useRef(onDiscard);
@@ -246,8 +219,12 @@ const SlateContentEditor = ({
     return defaultValue;
   }, [data, defaultValue]);
 
-  const [internalValue, setInternalValue] = useState<Descendant[]>(computedDefault);
-  const editorValue = useMemo(() => value ?? internalValue, [value, internalValue]);
+  const [internalValue, setInternalValue] =
+    useState<Descendant[]>(computedDefault);
+  const editorValue = useMemo(
+    () => value ?? internalValue,
+    [value, internalValue],
+  );
 
   const handleChange = useCallback(
     (val: Descendant[]) => {
@@ -265,36 +242,33 @@ const SlateContentEditor = ({
     onDiscardRef.current?.();
   }, []);
 
-  // ─── Rendering ──────────────────────────────────────────────────────────────
+  const renderLeaf = useCallback(({ attributes, children, leaf }: any) => {
+    if (leaf.bold) children = <strong>{children}</strong>;
+    if (leaf.italic) children = <em>{children}</em>;
+    if (leaf.underline) children = <u>{children}</u>;
+    if (leaf.strikethrough) children = <s>{children}</s>;
+    if (leaf.code) children = <code>{children}</code>;
 
-  const renderLeaf = useCallback(
-    ({ attributes, children, leaf }: any) => {
-      if (leaf.bold) children = <strong>{children}</strong>;
-      if (leaf.italic) children = <em>{children}</em>;
-      if (leaf.underline) children = <u>{children}</u>;
-      if (leaf.strikethrough) children = <s>{children}</s>;
-      if (leaf.code) children = <code>{children}</code>;
+    if (leaf.isTempHighlight) {
+      children = <span className={styles.commentSelection}>{children}</span>;
+    }
 
-      // Temp highlight while the user is still dragging/selecting
-      if (leaf.isTempHighlight) {
-        children = (
-          <span className={styles.commentSelection}>{children}</span>
-        );
-      }
+    if (leaf.commentId) {
+      const isActive = leaf.isActive;
+      children = (
+        <mark
+          className={clsx(
+            styles.commentHighlight,
+            isActive && styles.commentHighlightActive,
+          )}
+        >
+          {children}
+        </mark>
+      );
+    }
 
-      // Persistent comment highlight applied via marks
-      if (leaf.commentId) {
-        children = (
-          <mark className={styles.commentHighlight}>
-            {children}
-          </mark>
-        );
-      }
-
-      return <span {...attributes}>{children}</span>;
-    },
-    [],
-  );
+    return <span {...attributes}>{children}</span>;
+  }, []);
 
   const renderElement = useCallback(
     ({ attributes, children, element }: any) => {
@@ -306,27 +280,63 @@ const SlateContentEditor = ({
 
       switch (element.type) {
         case "heading-one":
-          return <h1 {...attributes} style={style}>{children}</h1>;
+          return (
+            <h1 {...attributes} style={style}>
+              {children}
+            </h1>
+          );
         case "heading-two":
-          return <h2 {...attributes} style={style}>{children}</h2>;
+          return (
+            <h2 {...attributes} style={style}>
+              {children}
+            </h2>
+          );
         case "heading-three":
-          return <h3 {...attributes} style={style}>{children}</h3>;
+          return (
+            <h3 {...attributes} style={style}>
+              {children}
+            </h3>
+          );
         case "heading-four":
-          return <h4 {...attributes} style={style}>{children}</h4>;
+          return (
+            <h4 {...attributes} style={style}>
+              {children}
+            </h4>
+          );
         case "heading-five":
           return (
-            <h5 {...attributes} style={style} className={element.className || "heading-five"}>
+            <h5
+              {...attributes}
+              style={style}
+              className={element.className || "heading-five"}
+            >
               {children}
             </h5>
           );
         case "heading-six":
-          return <h6 {...attributes} style={style}>{children}</h6>;
+          return (
+            <h6 {...attributes} style={style}>
+              {children}
+            </h6>
+          );
         case "bulleted-list":
-          return <ul {...attributes} style={style}>{children}</ul>;
+          return (
+            <ul {...attributes} style={style}>
+              {children}
+            </ul>
+          );
         case "numbered-list":
-          return <ol {...attributes} style={style}>{children}</ol>;
+          return (
+            <ol {...attributes} style={style}>
+              {children}
+            </ol>
+          );
         case "list-item":
-          return <li {...attributes} style={style}>{children}</li>;
+          return (
+            <li {...attributes} style={style}>
+              {children}
+            </li>
+          );
         case "block-quote":
           return (
             <blockquote
@@ -343,7 +353,10 @@ const SlateContentEditor = ({
           );
         case "code-block":
           return (
-            <pre {...attributes} style={{ background: "#f5f5f5", padding: 12, ...style }}>
+            <pre
+              {...attributes}
+              style={{ background: "#f5f5f5", padding: 12, ...style }}
+            >
               <code>{children}</code>
             </pre>
           );
@@ -354,22 +367,44 @@ const SlateContentEditor = ({
             </table>
           );
         case "table-row":
-          return <tr {...attributes} style={style}>{children}</tr>;
+          return (
+            <tr {...attributes} style={style}>
+              {children}
+            </tr>
+          );
         case "table-cell-header":
-          return <th {...attributes} style={style}>{children}</th>;
+          return (
+            <th {...attributes} style={style}>
+              {children}
+            </th>
+          );
         case "table-cell":
-          return element.isHeader
-            ? <th {...attributes} style={style}>{children}</th>
-            : <td {...attributes} style={style}>{children}</td>;
+          return element.isHeader ? (
+            <th {...attributes} style={style}>
+              {children}
+            </th>
+          ) : (
+            <td {...attributes} style={style}>
+              {children}
+            </td>
+          );
         case "paragraph":
           return (
-            <p {...attributes} style={style} className={element.className || "paragraph"}>
+            <p
+              {...attributes}
+              style={style}
+              className={element.className || "paragraph"}
+            >
               {children}
             </p>
           );
         default:
           return (
-            <p {...attributes} style={style} className={element.className || "paragraph"}>
+            <p
+              {...attributes}
+              style={style}
+              className={element.className || "paragraph"}
+            >
               {children}
             </p>
           );
@@ -377,8 +412,6 @@ const SlateContentEditor = ({
     },
     [],
   );
-
-  // ─── Keyboard shortcuts ──────────────────────────────────────────────────────
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
@@ -400,8 +433,6 @@ const SlateContentEditor = ({
     },
     [editor],
   );
-
-  // ─── Mouse selection → temp highlight ───────────────────────────────────────
 
   const handleMouseUp = (e: React.MouseEvent) => {
     if (!isShowComments) return;
@@ -427,11 +458,8 @@ const SlateContentEditor = ({
       position: { left: lastRect.right, top: lastRect.bottom },
     });
 
-    // Persist the Slate range so `decorate` can draw the temp highlight
     activeSpanRef.current = slateSelection;
   };
-
-  // ─── Submit comment ──────────────────────────────────────────────────────────
 
   const sendComment = useCallback(
     (text: string) => {
@@ -439,11 +467,8 @@ const SlateContentEditor = ({
       if (!range || !selection) return;
 
       const commentId = uuid();
-
-      // 1. Apply the persistent mark to the editor nodes immediately
       addCommentMark(range, commentId);
 
-      // 2. Add to local state so the sidebar renders it optimistically
       const newComment: any = {
         id: commentId,
         comment: text,
@@ -455,7 +480,6 @@ const SlateContentEditor = ({
 
       setStoredComments((prev) => [...prev, newComment]);
 
-      // 3. Persist via Redux
       const addCommentPayload: any = {
         commentType: "comment",
         commentId: "",
@@ -471,7 +495,6 @@ const SlateContentEditor = ({
       };
       dispatch(addComments(addCommentPayload));
 
-      // 4. Clean up temp selection state
       setSelection(null);
       activeSpanRef.current = null;
       Transforms.deselect(editor);
@@ -479,31 +502,43 @@ const SlateContentEditor = ({
     [selection, artifactJobID, addCommentMark, editor],
   );
 
-  // ─── Decorate: ONLY temp highlight (comment marks live on nodes now) ─────────
-
   const decorate = useCallback(
     ([node, path]: any) => {
       const ranges: any[] = [];
       if (!Text.isText(node)) return ranges;
 
-      // Show the light-blue temp highlight while the user is mid-selection
       if (activeSpanRef.current) {
         const intersection = Range.intersection(activeSpanRef.current, {
           anchor: { path, offset: 0 },
           focus: { path, offset: node.text.length },
         });
-        if (intersection) {
+        if (intersection)
           ranges.push({ ...intersection, isTempHighlight: true });
-        }
+      }
+
+      if (isShowComments) {
+        storedComments.forEach((comment: any) => {
+          if (comment.range) {
+            const intersection = Range.intersection(comment.range, {
+              anchor: { path, offset: 0 },
+              focus: { path, offset: node.text.length },
+            });
+
+            if (intersection) {
+              ranges.push({
+                ...intersection,
+                commentId: comment.id,
+                isActive: comment.id === activeCommentId,
+              });
+            }
+          }
+        });
       }
 
       return ranges;
     },
-    // Re-run whenever selection changes so the highlight appears/disappears live
-    [selection],
+    [storedComments, activeCommentId, isShowComments],
   );
-
-  // ─── Click-outside closes floating toolbar ───────────────────────────────────
 
   useEffect(() => {
     if (!selection) return;
@@ -522,7 +557,6 @@ const SlateContentEditor = ({
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [selection, editor]);
 
-  // Escape key dismisses floating toolbar
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -535,8 +569,6 @@ const SlateContentEditor = ({
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [editor]);
-
-  // ─── Sidebar: scroll-to + activate comment ───────────────────────────────────
 
   const activeCommentFunction = (commentId: string | undefined) => {
     setActiveCommentId(commentId);
@@ -552,7 +584,6 @@ const SlateContentEditor = ({
           behavior: "smooth",
           block: "center",
         });
-        // Remove browser's default blue selection highlight after scrolling
         Transforms.deselect(editor);
         window.getSelection()?.removeAllRanges();
       } catch (e) {
@@ -566,8 +597,6 @@ const SlateContentEditor = ({
     });
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
-
   return (
     <>
       <div
@@ -577,7 +606,11 @@ const SlateContentEditor = ({
         )}
       >
         <div className={styles.editorArea}>
-          <Slate editor={editor} initialValue={editorValue} onChange={handleChange}>
+          <Slate
+            editor={editor}
+            initialValue={editorValue}
+            onChange={handleChange}
+          >
             {!mode && (
               <Toolbar
                 onClickSaveBtn={onClickSaveBtn ? handleSave : undefined}
