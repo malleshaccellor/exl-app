@@ -1,414 +1,33 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+// import { createEditor, Editor, type Descendant ,Text} from "slate";
 import {
   createEditor,
-  Editor,
-  Text,
-  Transforms,
-  Range,
   type Descendant,
-  type NodeEntry,
+  Editor,
+  Range,
+  Transforms,
+  Text,
 } from "slate";
 import { Slate, Editable, withReact, ReactEditor } from "slate-react";
 import { withHistory } from "slate-history";
 import clsx from "clsx";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type textStyle = "bold" | "italic" | "underline" | "strikethrough" | "code";
-
-interface CommentMark {
-  id: string;
-  text: string;
-  comment: string;
-  time: string;
-  anchor: { path: number[]; offset: number };
-  focus: { path: number[]; offset: number };
-  isResolved: boolean;
-}
-
-interface FloatingToolbarState {
-  visible: boolean;
-  x: number;
-  y: number;
-  selectedText: string;
-  range: Range | null;
-}
-
-/** Removes a pending <mark> inserted during selection, unwrapping its children back into the DOM */
-function removePendingMark(markEl: HTMLElement | null) {
-  if (!markEl || !markEl.parentNode) return;
-  const parent = markEl.parentNode;
-  while (markEl.firstChild) parent.insertBefore(markEl.firstChild, markEl);
-  parent.removeChild(markEl);
-  parent.normalize();
-}
-
-// ─── localStorage helpers ─────────────────────────────────────────────────────
-
-const LS_KEY = (docId: string) => `slate_comments_${docId}`;
-
-function loadComments(docId: string): CommentMark[] {
-  try {
-    const raw = localStorage.getItem(LS_KEY(docId));
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveComments(docId: string, comments: CommentMark[]) {
-  localStorage.setItem(LS_KEY(docId), JSON.stringify(comments));
-}
-
-// ─── Toolbar (minimal inline) ─────────────────────────────────────────────────
-
-const toggleMark = (editor: Editor, format: textStyle) => {
-  const isActive = Editor.marks(editor)?.[format] === true;
-  if (isActive) Editor.removeMark(editor, format);
-  else Editor.addMark(editor, format, true);
-};
-
-function Toolbar({
-  editor,
-  readOnly,
-}: {
-  editor: Editor;
-  readOnly?: boolean;
-}) {
-  if (readOnly) return null;
-  const btn = (label: string, fmt: textStyle, style?: React.CSSProperties) => (
-    <button
-      key={fmt}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        toggleMark(editor, fmt);
-      }}
-      style={{
-        marginRight: 4,
-        padding: "2px 8px",
-        fontWeight: fmt === "bold" ? 700 : 400,
-        fontStyle: fmt === "italic" ? "italic" : "normal",
-        textDecoration:
-          fmt === "underline"
-            ? "underline"
-            : fmt === "strikethrough"
-            ? "line-through"
-            : "none",
-        cursor: "pointer",
-        borderRadius: 4,
-        border: "1px solid #d1d5db",
-        background: "#f9fafb",
-        ...style,
-      }}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <div
-      style={{
-        padding: "6px 12px",
-        borderBottom: "1px solid #e5e7eb",
-        display: "flex",
-        gap: 4,
-      }}
-    >
-      {btn("B", "bold")}
-      {btn("I", "italic")}
-      {btn("U", "underline")}
-      {btn("S", "strikethrough")}
-    </div>
-  );
-}
-
-// ─── Floating Comment Bubble ───────────────────────────────────────────────────
-
-function FloatingCommentBubble({
-  state,
-  onSubmit,
-  onCancel,
-}: {
-  state: FloatingToolbarState;
-  onSubmit: (text: string) => void;
-  onCancel: () => void;
-}) {
-  const [text, setText] = useState("");
-
-  if (!state.visible) return null;
-
-  return (
-    <div
-      style={{
-        position: "fixed",
-        top: state.y,
-        left: state.x,
-        zIndex: 9999,
-        background: "#fff",
-        border: "1px solid #e2e8f0",
-        borderRadius: 12,
-        boxShadow:
-          "0 8px 30px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.08)",
-        padding: "12px 14px",
-        minWidth: 260,
-        maxWidth: 320,
-        animation: "bubbleIn 0.18s cubic-bezier(0.34,1.56,0.64,1)",
-      }}
-    >
-      <style>{`
-        @keyframes bubbleIn {
-          from { opacity:0; transform:translateY(-6px) scale(0.96); }
-          to   { opacity:1; transform:translateY(0)   scale(1); }
-        }
-      `}</style>
-
-      {/* selected text preview */}
-      {state.selectedText && (
-        <div
-          style={{
-            fontSize: 11,
-            color: "#6b7280",
-            marginBottom: 8,
-            padding: "4px 8px",
-            background: "#fef9c3",
-            borderRadius: 6,
-            borderLeft: "3px solid #f59e0b",
-            maxHeight: 48,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          "{state.selectedText}"
-        </div>
-      )}
-
-      <textarea
-        autoFocus
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Add a comment…"
-        rows={3}
-        style={{
-          width: "100%",
-          resize: "none",
-          border: "1px solid #d1d5db",
-          borderRadius: 8,
-          padding: "8px 10px",
-          fontSize: 13,
-          fontFamily: "inherit",
-          outline: "none",
-          boxSizing: "border-box",
-          lineHeight: 1.5,
-          color: "#111827",
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onCancel();
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            if (text.trim()) { onSubmit(text.trim()); setText(""); }
-          }
-        }}
-      />
-
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          gap: 8,
-          marginTop: 8,
-        }}
-      >
-        <button
-          onClick={onCancel}
-          style={{
-            padding: "5px 12px",
-            borderRadius: 7,
-            border: "1px solid #d1d5db",
-            background: "#f9fafb",
-            cursor: "pointer",
-            fontSize: 12,
-            color: "#374151",
-          }}
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => {
-            if (text.trim()) { onSubmit(text.trim()); setText(""); }
-          }}
-          style={{
-            padding: "5px 14px",
-            borderRadius: 7,
-            border: "none",
-            background: "#3b82f6",
-            color: "#fff",
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 600,
-          }}
-        >
-          Comment ⌘↵
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ─── Comment Sidebar ──────────────────────────────────────────────────────────
-
-function CommentSidebar({
-  comments,
-  activeId,
-  onResolve,
-  onDelete,
-  onActivate,
-}: {
-  comments: CommentMark[];
-  activeId?: string;
-  onResolve: (id: string) => void;
-  onDelete: (id: string) => void;
-  onActivate: (id: string) => void;
-}) {
-  const unresolved = comments.filter((c) => !c.isResolved);
-  const resolved = comments.filter((c) => c.isResolved);
-
-  const Card = ({ c }: { c: CommentMark }) => (
-    <div
-      onClick={() => onActivate(c.id)}
-      style={{
-        padding: "10px 12px",
-        marginBottom: 8,
-        borderRadius: 10,
-        border: `1.5px solid ${activeId === c.id ? "#3b82f6" : "#e5e7eb"}`,
-        background: activeId === c.id ? "#eff6ff" : "#fff",
-        cursor: "pointer",
-        transition: "all 0.15s",
-        opacity: c.isResolved ? 0.5 : 1,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          color: "#6b7280",
-          marginBottom: 4,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          borderLeft: "3px solid #f59e0b",
-          paddingLeft: 6,
-        }}
-      >
-        "{c.text}"
-      </div>
-      <div style={{ fontSize: 13, color: "#111827", marginBottom: 6 }}>
-        {c.comment}
-      </div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <span style={{ fontSize: 10, color: "#9ca3af" }}>
-          {new Date(c.time).toLocaleString()}
-        </span>
-        <div style={{ display: "flex", gap: 6 }}>
-          {!c.isResolved && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onResolve(c.id); }}
-              style={{
-                fontSize: 10,
-                padding: "2px 7px",
-                borderRadius: 5,
-                border: "1px solid #d1fae5",
-                background: "#ecfdf5",
-                color: "#065f46",
-                cursor: "pointer",
-              }}
-            >
-              ✓ Resolve
-            </button>
-          )}
-          <button
-            onClick={(e) => { e.stopPropagation(); onDelete(c.id); }}
-            style={{
-              fontSize: 10,
-              padding: "2px 7px",
-              borderRadius: 5,
-              border: "1px solid #fee2e2",
-              background: "#fef2f2",
-              color: "#991b1b",
-              cursor: "pointer",
-            }}
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  return (
-    <div
-      style={{
-        width: 280,
-        borderLeft: "1px solid #e5e7eb",
-        padding: "16px 14px",
-        overflowY: "auto",
-        background: "#fafafa",
-        flexShrink: 0,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: "#374151",
-          letterSpacing: "0.06em",
-          textTransform: "uppercase",
-          marginBottom: 12,
-        }}
-      >
-        Comments ({unresolved.length})
-      </div>
-
-      {unresolved.length === 0 && (
-        <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "center", marginTop: 40 }}>
-          Select text in preview mode<br />to add a comment
-        </div>
-      )}
-
-      {unresolved.map((c) => <Card key={c.id} c={c} />)}
-
-      {resolved.length > 0 && (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#9ca3af",
-              letterSpacing: "0.05em",
-              textTransform: "uppercase",
-              margin: "16px 0 8px",
-            }}
-          >
-            Resolved ({resolved.length})
-          </div>
-          {resolved.map((c) => <Card key={c.id} c={c} />)}
-        </>
-      )}
-    </div>
-  );
-}
-
-// ─── Main Editor ──────────────────────────────────────────────────────────────
+import Toolbar from "./Toolbar";
+import { withTables } from "./plugins/withTables";
+import { jsonToSlateValue } from "./utils/jsonConversion";
+import type { textStyle } from "./types";
+import styles from "./slate-editor.module.css";
+import CommentSidebar from "../CommentSidebar";
+import { useAppDispatch, useAppSelector } from "../../store/hooks";
+import type {
+  repliesType,
+  storedCommentsType,
+} from "../OutputGeneration/ActionLogTable";
+import {
+  addComments,
+  fetchComments,
+} from "../../store/reducer/comments/action";
+import FloatingCommentToolbar from "../FloatingCommentToolbar";
+import { v4 as uuid } from "uuid";
 
 interface SlateEditorProps {
   value?: Descendant[];
@@ -424,472 +43,655 @@ interface SlateEditorProps {
   hideIndentActions?: boolean;
   isShowComments?: boolean;
   onCommentsWindowClose?: () => void;
-  /** Used as the localStorage key for comments */
   artifactJobID?: string;
+  mode?: boolean;
+}
+interface Comment {
+  id: string;
+  author: string;
+  text: string;
+  createdAt: string;
+  resolved: boolean;
+  replies: any[];
+  range: any; // Slate Range
+  selectedText: string;
 }
 
-const DOC_ID_FALLBACK = "default_doc";
-
-export const SlateContentEditor = ({
+const toggleMark = (editor: Editor, format: textStyle) => {
+  const isActive = Editor.marks(editor)?.[format] === true;
+  if (isActive) {
+    Editor.removeMark(editor, format);
+  } else {
+    Editor.addMark(editor, format, true);
+  }
+};
+const SlateContentEditor = ({
   value,
-  defaultValue = [{ type: "paragraph", children: [{ text: "" }] } as any],
+  defaultValue = [],
   onChange,
   readOnly,
   onClickSaveBtn,
   className,
+  data,
   onDiscard,
+  hideFontActions,
+  hideIndentActions,
+  hideAlignmentActions,
   isShowComments = false,
   onCommentsWindowClose,
   artifactJobID,
+  mode = false,
 }: SlateEditorProps) => {
-  const docId = artifactJobID ?? DOC_ID_FALLBACK;
-
+  const dispatch = useAppDispatch();
   const editor = useMemo(
-    () => withHistory(withReact(createEditor())),
-    []
+    () => withTables(withHistory(withReact(createEditor()))),
+    [],
   );
+  // const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
+  //   [],
+  // );
+  // 1. Initial Value for Slate
 
-  // ── comments state ──
-  const [comments, setComments] = useState<CommentMark[]>(() =>
-    loadComments(docId)
-  );
-  const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
-
-  // persist whenever comments change
-  useEffect(() => {
-    saveComments(docId, comments);
-  }, [comments, docId]);
-
-  // ── floating bubble ──
-  const [bubble, setBubble] = useState<FloatingToolbarState>({
-    visible: false,
-    x: 0,
-    y: 0,
-    selectedText: "",
-    range: null,
+  // 2. Initial Value for Comments Sidebar
+  const [storedComments, setStoredComments] = useState<any[]>(() => {
+    const saved = localStorage.getItem("editor-comments");
+    return saved ? JSON.parse(saved) : [];
   });
+  useEffect(() => {
+    const saved = localStorage.getItem("editor-comments");
+    // console.log(saved)
+    if (saved) {
+      setStoredComments(JSON.parse(saved));
+    }
+  }, [isShowComments]);
 
-  // ── editor value ──
-  const [internalValue, setInternalValue] = useState<Descendant[]>(
-    defaultValue
+  const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
+  const [selection, setSelection] = useState<{
+    text: string;
+    position: { top: number; left: number };
+  } | null>(null);
+  const activeSpanRef = useRef<Range | null>(null);
+
+  const getCommentsData = useAppSelector((state) => state.comments.comments);
+  const addCommentMark = (editor: Editor, range: Range, commentId: string) => {
+    // 1. Force the selection to the comment range
+    Transforms.select(editor, range);
+
+    // 2. Apply the mark and split the nodes at the range boundaries
+    // This ensures a new 'leaf' is created specifically for this comment
+    Transforms.setNodes(
+      editor,
+      { commentId },
+      {
+        at: range,
+        match: (n) => Text.isText(n),
+        split: true, // CRITICAL: This forces Slate to create a separate leaf for the highlight
+      },
+    );
+
+    // 3. Deselect to remove the browser's native blue highlight
+    Transforms.deselect(editor);
+  };
+
+  const removeCommentMark = (editor: Editor, commentId: string): void => {
+    const nodes = Array.from(
+      Editor.nodes(editor, {
+        at: [],
+        match: (n) => Text.isText(n) && (n as any).commentId === commentId,
+      }),
+    );
+
+    for (const [, path] of nodes) {
+      Transforms.unsetNodes(editor, "commentId", { at: path });
+    }
+  };
+
+  useEffect(() => {
+    if (artifactJobID) {
+      dispatch(fetchComments(artifactJobID));
+    }
+  }, []);
+
+  // useEffect(() => {
+  //   if (getCommentsData?.jobId !== artifactJobID) {
+  //     setStoredComments([]);
+  //     return;
+  //   }
+  //   const existingComments = getCommentsData?.data.map((com) => ({
+  //     id: com.id,
+  //     position: {
+  //       left: com.position.left,
+  //       top: com.position.top,
+  //     },
+  //     rowIndex: com.rowIndex,
+  //     colField: com.colField,
+  //     text: com.text,
+  //     comment: com.comment,
+  //     time: com.createdAt,
+  //     userId: com.useId,
+  //     isResolved: com.isResolved,
+  //     replies: com.replies.map((reply: repliesType) => ({
+  //       id: reply?.id,
+  //       text: reply?.text,
+  //       createdAt: reply?.createdAt,
+  //       useId: reply?.useId,
+  //     })),
+  //   }));
+  //   setStoredComments(existingComments);
+  // }, [getCommentsData, artifactJobID]);
+  const deletedCommentsData = useAppSelector(
+    (state) => state.comments.deleteComment,
   );
-  const editorValue = value ?? internalValue;
 
+  const updatedCommentData = useAppSelector(
+    (state) => state.comments.updateComment,
+  );
+  const uploadCommentData = useAppSelector(
+    (state) => state.comments.addComment,
+  );
+  useEffect(() => {
+    if (artifactJobID) {
+      dispatch(fetchComments(artifactJobID));
+    }
+  }, [uploadCommentData?.data]);
+  useEffect(() => {
+    if (deletedCommentsData?.message === "OK" && artifactJobID) {
+      dispatch(fetchComments(artifactJobID));
+    }
+    if (updatedCommentData?.message === "OK" && artifactJobID) {
+      dispatch(fetchComments(artifactJobID));
+    }
+  }, [deletedCommentsData, updatedCommentData]);
+
+  // Keep callbacks in refs to avoid stale closures
+  const onSaveRef = useRef(onClickSaveBtn);
+  onSaveRef.current = onClickSaveBtn;
+  const onDiscardRef = useRef(onDiscard);
+  onDiscardRef.current = onDiscard;
+
+  const computedDefault = useMemo(() => {
+    if (data) return jsonToSlateValue(data);
+    return defaultValue;
+  }, [data, defaultValue]);
+
+  const [internalValue, setInternalValue] =
+    useState<Descendant[]>(computedDefault);
+  const editorValue = useMemo(
+    () => value ?? internalValue,
+    [value, internalValue],
+  );
+
+  // const handleChange = useCallback(
+  //   (val: Descendant[]) => {
+  //     if (!value) {
+  //       setInternalValue(val);
+  //     }
+  //     onChange?.(val);
+  //   },
+  //   [value, onChange],
+  // );
   const handleChange = useCallback(
     (val: Descendant[]) => {
-      if (!value) setInternalValue(val);
-      onChange?.(val);
-    },
-    [value, onChange]
-  );
-
-  // ── decorate: highlight commented ranges + active selection ──
-  const decorate = useCallback(
-    ([node, path]: NodeEntry) => {
-      const ranges: any[] = [];
-      if (!Text.isText(node)) return ranges;
-
-      // highlight each stored comment
-      for (const c of comments) {
-        try {
-          const anchor = { path: c.anchor.path, offset: c.anchor.offset };
-          const focus = { path: c.focus.path, offset: c.focus.offset };
-          // only decorate if this text node is at the anchor path (simplified)
-          if (
-            JSON.stringify(path) === JSON.stringify(anchor.path) &&
-            JSON.stringify(path) === JSON.stringify(focus.path)
-          ) {
-            ranges.push({
-              anchor,
-              focus,
-              commentHighlight: true,
-              commentId: c.id,
-              isActive: c.id === activeCommentId,
-              isResolved: c.isResolved,
-            });
-          }
-        } catch { /* skip malformed */ }
+      if (!value) {
+        setInternalValue(val);
       }
 
-      return ranges;
+      onChange?.(val);
     },
-    [comments, activeCommentId]
+    [value, onChange],
   );
 
-  // ── renderLeaf ──
-  const renderLeaf = useCallback(({ attributes, children, leaf }: any) => {
-    let el = children;
-    if (leaf.bold) el = <strong>{el}</strong>;
-    if (leaf.italic) el = <em>{el}</em>;
-    if (leaf.underline) el = <u>{el}</u>;
-    if (leaf.strikethrough) el = <s>{el}</s>;
-    if (leaf.code) el = <code>{el}</code>;
+  const handleSave = useCallback(() => {
+    onSaveRef.current?.(editor.children);
+  }, [editor]);
 
-    const highlightStyle: React.CSSProperties = leaf.commentHighlight
-      ? {
-          backgroundColor: leaf.isResolved
-            ? "rgba(156,163,175,0.25)"
-            : leaf.isActive
-            ? "rgba(59,130,246,0.25)"
-            : "rgba(251,191,36,0.35)",
-          borderBottom: leaf.isResolved
-            ? "1.5px solid #9ca3af"
-            : "1.5px solid #f59e0b",
-          borderRadius: 2,
-          cursor: "pointer",
-        }
-      : {};
+  const handleDiscard = useCallback(() => {
+    onDiscardRef.current?.();
+  }, []);
 
-    return (
-      <span
-        {...attributes}
-        style={highlightStyle}
-        onClick={
-          leaf.commentHighlight
-            ? () => setActiveCommentId(leaf.commentId)
-            : undefined
-        }
-      >
-        {el}
-      </span>
-    );
-  }, [activeCommentId]);
-
-  // ── renderElement ──
-  const renderElement = useCallback(({ attributes, children, element }: any) => {
-    const style: React.CSSProperties = {
-      textAlign: element.align || "left",
-      paddingLeft: element.indent ? `${element.indent * 24}px` : undefined,
-      fontSize: element.fontSize ? `${element.fontSize}px` : undefined,
-    };
-    switch (element.type) {
-      case "heading-one": return <h1 {...attributes} style={style}>{children}</h1>;
-      case "heading-two": return <h2 {...attributes} style={style}>{children}</h2>;
-      case "heading-three": return <h3 {...attributes} style={style}>{children}</h3>;
-      case "bulleted-list": return <ul {...attributes} style={style}>{children}</ul>;
-      case "numbered-list": return <ol {...attributes} style={style}>{children}</ol>;
-      case "list-item": return <li {...attributes} style={style}>{children}</li>;
-      case "block-quote":
-        return (
-          <blockquote
+  const renderLeaf = useCallback(
+    ({ attributes, children, leaf }: any) => {
+      // 1. TYPING/SELECTING highlight (isTempHighlight)
+      // Changed from #0369a1 to Light Blue to match your request
+      if (leaf.isTempHighlight) {
+        children = (
+          <span
             {...attributes}
+            style={{ backgroundColor: "#e0f2fe", textDecoration: "none" }}
+          >
+            {children}
+          </span>
+        );
+      }
+
+      // 2. SAVED COMMENTS
+      if (leaf.commentId) {
+        const isActive = leaf.isActive;
+
+        children = (
+          <mark
+            {...attributes}
+            className={clsx(
+              styles.commentHighlight,
+              isActive && styles.activeHighlight,
+            )}
             style={{
-              borderLeft: "3px solid #ccc",
-              color: "#666",
-              ...style,
-              paddingLeft: style.paddingLeft || "12px",
+              // Light Blue if active, Light Grey (#eeeeee) if inactive
+              backgroundColor: isActive ? "#e0f2fe" : "#eeeeee",
+              textDecoration: "none", // No underline
+              cursor: "pointer",
+              color: "inherit",
             }}
           >
             {children}
-          </blockquote>
+          </mark>
         );
-      case "table":
-        return (
-          <table style={{ borderCollapse: "collapse", width: "100%" }}>
-            <tbody {...attributes}>{children}</tbody>
-          </table>
-        );
-      case "table-row": return <tr {...attributes}>{children}</tr>;
-      case "table-cell": return <td {...attributes} style={{ border: "1px solid #e5e7eb", padding: 6, ...style }}>{children}</td>;
-      case "table-cell-header": return <th {...attributes} style={{ border: "1px solid #e5e7eb", padding: 6, background: "#f3f4f6", ...style }}>{children}</th>;
-      default:
-        return <p {...attributes} style={style}>{children}</p>;
-    }
-  }, []);
-
-  // ── handle text selection (read-only mode only) ──
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-  const pendingMarkRef = useRef<HTMLElement | null>(null);
-
-  const handleSelectionChange = useCallback(() => {
-    if (!readOnly) return;
-
-    const nativeSel = window.getSelection();
-    if (!nativeSel || nativeSel.isCollapsed || !nativeSel.toString().trim()) {
-      setBubble((b) => ({ ...b, visible: false }));
-      return;
-    }
-
-    const selectedText = nativeSel.toString().trim();
-    const range = nativeSel.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
-
-    // Remove any previous pending mark before wrapping a new one
-    removePendingMark(pendingMarkRef.current);
-    pendingMarkRef.current = null;
-
-    // Wrap the selection in a <mark> so it stays highlighted after selection clears
-    const mark = document.createElement("mark");
-    mark.style.cssText =
-      "background:rgba(251,191,36,0.45);border-bottom:2px solid #f59e0b;border-radius:2px;";
-    try {
-      range.surroundContents(mark);
-    } catch {
-      mark.appendChild(range.extractContents());
-      range.insertNode(mark);
-    }
-    pendingMarkRef.current = mark;
-
-    // Clear native selection — the <mark> keeps the visual highlight
-    nativeSel.removeAllRanges();
-
-    // Get Slate range from the mark's position
-    const x = Math.min(rect.right + 12, window.innerWidth - 340);
-    const y = rect.bottom + 8;
-
-    try {
-      const newRange = document.createRange();
-      newRange.selectNodeContents(mark);
-      const slateRange = ReactEditor.toSlateRange(editor, {
-        anchorNode: newRange.startContainer,
-        anchorOffset: newRange.startOffset,
-        focusNode: newRange.endContainer,
-        focusOffset: newRange.endOffset,
-        isCollapsed: false,
-      } as any, { exactMatch: false });
-      setBubble({ visible: true, x, y, selectedText, range: slateRange });
-    } catch {
-      setBubble({ visible: true, x, y, selectedText, range: null });
-    }
-  }, [editor, readOnly]);
-
-  /** Cancel: remove the pending highlight mark and close the bubble */
-  const handleCancelComment = useCallback(() => {
-    removePendingMark(pendingMarkRef.current);
-    pendingMarkRef.current = null;
-    setBubble({ visible: false, x: 0, y: 0, selectedText: "", range: null });
-    window.getSelection()?.removeAllRanges();
-  }, []);
-
-  const handleSubmitComment = useCallback(
-    (commentText: string) => {
-      if (!bubble.selectedText) return;
-
-      const selectedText = bubble.selectedText;
-      const newComment: CommentMark = {
-        id: `cmt_${Date.now()}`,
-        text: selectedText,
-        comment: commentText,
-        time: new Date().toISOString(),
-        anchor: {
-          path: bubble.range?.anchor.path as number[] ?? [],
-          offset: bubble.range?.anchor.offset ?? 0,
-        },
-        focus: {
-          path: bubble.range?.focus.path as number[] ?? [],
-          offset: bubble.range?.focus.offset ?? 0,
-        },
-        isResolved: false,
-      };
-
-      // Promote pending <mark> to a saved highlight instead of removing it
-      if (pendingMarkRef.current) {
-        const mark = pendingMarkRef.current;
-        mark.style.cssText =
-          "background:rgba(251,191,36,0.32);border-bottom:1.5px solid #f59e0b;border-radius:2px;cursor:pointer;";
-        mark.dataset.cid = newComment.id;
-        mark.onclick = () => setActiveCommentId(newComment.id);
-        pendingMarkRef.current = null;
       }
 
-      setComments((prev) => {
-        const next = [...prev, newComment];
-        saveComments(docId, next);
-        return next;
-      });
-      setActiveCommentId(newComment.id);
-      setBubble({ visible: false, x: 0, y: 0, selectedText: "", range: null });
-      window.getSelection()?.removeAllRanges();
+      // Standard marks
+      if (leaf.bold) children = <strong>{children}</strong>;
+      if (leaf.italic) children = <em>{children}</em>;
+      if (leaf.underline) children = <u>{children}</u>;
+      if (leaf.strikethrough) children = <s>{children}</s>;
+      if (leaf.code) children = <code>{children}</code>;
+
+      return <span {...attributes}>{children}</span>;
     },
-    [bubble, docId]
+    [activeCommentId],
+  ); // Add dependency to ensure re-render on click
+
+  const renderElement = useCallback(
+    ({ attributes, children, element }: any) => {
+      const style = {
+        textAlign: element.align || "left",
+        paddingLeft: element.indent ? `${element.indent * 24}px` : undefined,
+        fontSize: element.fontSize ? `${element.fontSize}px` : undefined,
+      };
+
+      switch (element.type) {
+        case "heading-one":
+          return (
+            <h1 {...attributes} style={style}>
+              {children}
+            </h1>
+          );
+        case "heading-two":
+          return (
+            <h2 {...attributes} style={style}>
+              {children}
+            </h2>
+          );
+        case "heading-three":
+          return (
+            <h3 {...attributes} style={style}>
+              {children}
+            </h3>
+          );
+        case "heading-four":
+          return (
+            <h4 {...attributes} style={style}>
+              {children}
+            </h4>
+          );
+        case "heading-five":
+          return (
+            <h5
+              {...attributes}
+              style={style}
+              className={element.className || "heading-five"}
+            >
+              {children}
+            </h5>
+          );
+        case "heading-six":
+          return (
+            <h6 {...attributes} style={style}>
+              {children}
+            </h6>
+          );
+        case "bulleted-list":
+          return (
+            <ul {...attributes} style={style}>
+              {children}
+            </ul>
+          );
+        case "numbered-list":
+          return (
+            <ol {...attributes} style={style}>
+              {children}
+            </ol>
+          );
+        case "list-item":
+          return (
+            <li {...attributes} style={style}>
+              {children}
+            </li>
+          );
+
+        case "block-quote":
+          return (
+            <blockquote
+              {...attributes}
+              style={{
+                borderLeft: "3px solid #ccc",
+                color: "#666",
+                ...style,
+                paddingLeft: style.paddingLeft || "12px",
+              }}
+            >
+              {children}
+            </blockquote>
+          );
+
+        case "code-block":
+          return (
+            <pre
+              {...attributes}
+              style={{
+                background: "#f5f5f5",
+                padding: 12,
+                ...style,
+              }}
+            >
+              <code>{children}</code>
+            </pre>
+          );
+        case "table":
+          return (
+            <table className={element.className || "table"}>
+              <tbody {...attributes}>{children}</tbody>
+            </table>
+          );
+        case "table-row":
+          return (
+            <tr {...attributes} style={style}>
+              {children}
+            </tr>
+          );
+        case "table-cell-header":
+          return (
+            <th {...attributes} style={style}>
+              {children}
+            </th>
+          );
+        case "table-cell":
+          if (element.isHeader) {
+            return (
+              <th {...attributes} style={style}>
+                {children}
+              </th>
+            );
+          }
+          return (
+            <td {...attributes} style={style}>
+              {children}
+            </td>
+          );
+        case "paragraph":
+          return (
+            <p
+              {...attributes}
+              style={{ ...style }}
+              className={element.className || "paragraph"}
+            >
+              {children}
+            </p>
+          );
+        default:
+          return (
+            <p
+              {...attributes}
+              style={style}
+              className={element.className || "paragraph"}
+            >
+              {children}
+            </p>
+          );
+      }
+    },
+    [],
   );
-
-  const handleResolve = useCallback((id: string) => {
-    setComments((prev) =>
-      prev.map((c) => (c.id === id ? { ...c, isResolved: true } : c))
-    );
-  }, []);
-
-  const handleDelete = useCallback((id: string) => {
-    setComments((prev) => prev.filter((c) => c.id !== id));
-    setActiveCommentId((a) => (a === id ? undefined : a));
-  }, []);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       switch (event.key) {
-        case "b": event.preventDefault(); toggleMark(editor, "bold"); break;
-        case "i": event.preventDefault(); toggleMark(editor, "italic"); break;
-        case "u": event.preventDefault(); toggleMark(editor, "underline"); break;
+        case "b":
+          event.preventDefault();
+          toggleMark(editor, "bold");
+          break;
+        case "i":
+          event.preventDefault();
+          toggleMark(editor, "italic");
+          break;
+        case "u":
+          event.preventDefault();
+          toggleMark(editor, "underline");
+          break;
       }
     },
-    [editor]
+    [editor],
   );
 
-  // close bubble on outside click — also removes the pending highlight
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (!isShowComments) return;
+
+    // Get the Slate selection instead of DOM selection
+    const { selection: slateSelection } = editor;
+
+    if (!slateSelection || Range.isCollapsed(slateSelection)) return;
+
+    const selectedText = Editor.string(editor, slateSelection);
+    if (!selectedText.trim()) return;
+
+    const domSelection = window.getSelection();
+    const domRange = domSelection?.getRangeAt(0);
+    const rect = domRange?.getBoundingClientRect();
+
+    setSelection({
+      text: selectedText,
+      position: {
+        left: (rect?.right ?? 0) + window.scrollX + 8,
+        top: (rect?.top ?? 0) + window.scrollY,
+      },
+    });
+
+    // Store the SLATE selection, not the DOM range
+    activeSpanRef.current = slateSelection;
+  };
+
+  const sendComment = useCallback(
+    (text: string) => {
+      const range = activeSpanRef.current;
+      if (!range || !selection) return;
+
+      const commentId = uuid();
+
+      const newComment = {
+        id: commentId,
+        // userId: usersDetails?.id,
+        comment: text,
+        time: new Date().toISOString(),
+        range, // We bind using this range
+        selectedText: selection.text,
+      };
+
+      setStoredComments((prev) => {
+        const updated = [...prev, newComment];
+        // ONLY save the comments array to LocalStorage
+        localStorage.setItem(`editor-comments`, JSON.stringify(updated));
+        return updated;
+      });
+
+      // Clean up UI
+      setSelection(null);
+      activeSpanRef.current = null;
+      Transforms.deselect(editor);
+    },
+    [selection, artifactJobID],
+  );
+
+  const decorate = useCallback(
+    ([node, path]: any) => {
+      const ranges: any[] = [];
+      if (!Text.isText(node)) return ranges;
+
+      // 1. ALWAYS show temp highlight (Light Blue) while selecting text
+      if (activeSpanRef.current) {
+        const intersection = Range.intersection(activeSpanRef.current, {
+          anchor: { path, offset: 0 },
+          focus: { path, offset: node.text.length },
+        });
+        if (intersection)
+          ranges.push({ ...intersection, isTempHighlight: true });
+      }
+
+      // 2. CONDITIONALLY show existing comments (Grey/Blue)
+      // Only execute this loop if showComments is true
+      if (isShowComments) {
+        storedComments.forEach((comment: any) => {
+          if (comment.range) {
+            const intersection = Range.intersection(comment.range, {
+              anchor: { path, offset: 0 },
+              focus: { path, offset: node.text.length },
+            });
+
+            if (intersection) {
+              ranges.push({
+                ...intersection,
+                commentId: comment.id,
+                isActive: comment.id === activeCommentId,
+              });
+            }
+          }
+        });
+      }
+
+      return ranges;
+    },
+    [storedComments, activeCommentId, selection, isShowComments],
+  ); // Add showComments to dependencies
+
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      if (target.closest("[data-comment-bubble]")) return;
-      if (bubble.visible) handleCancelComment();
+    if (!selection) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const toolbar = document.getElementById("floating-toolbar");
+      if (!toolbar) return;
+      if (!toolbar.contains(e.target as Node)) {
+        setSelection(null);
+      }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [bubble.visible, handleCancelComment]);
+
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [selection]);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelection(null);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const activeCommentFunction = (commentId: string | undefined) => {
+    // 1. Update the state (this triggers the "glow" in the editor via decorate)
+    setActiveCommentId(commentId);
+
+    if (!commentId) return;
+
+    // 2. Find the comment to get its range
+    const target = storedComments.find((c: any) => c.id === commentId);
+
+    if (target?.range) {
+      try {
+        // 3. Focus and select the text in Slate
+        ReactEditor.focus(editor);
+        Transforms.select(editor, target.range);
+
+        // 4. Scroll the Slate editor to the text
+        const domRange = ReactEditor.toDOMRange(editor, target.range);
+        domRange.startContainer.parentElement?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      } catch (e) {
+        console.warn("Could not scroll to comment range", e);
+      }
+    }
+
+    // 5. Scroll the sidebar (existing logic)
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`comment-${commentId}`);
+      if (el) {
+        el.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    });
+  };
 
   return (
     <>
-      {/* Global highlight styles */}
-      <style>{`
-        .slate-editor-highlight::selection { background: rgba(251,191,36,0.4); }
-      `}</style>
-
       <div
-        style={{
-          display: "flex",
-          height: "100%",
-          border: "1px solid #e5e7eb",
-          borderRadius: 12,
-          overflow: "hidden",
-          background: "#fff",
-        }}
+        className={clsx(
+          styles.editorContainer,
+          isShowComments && styles.editorWithComments,
+        )}
       >
-        {/* Editor area */}
-        <div
-          ref={editorContainerRef}
-          style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}
-        >
-          {/* Mode badge */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "6px 14px",
-              borderBottom: "1px solid #f3f4f6",
-              background: readOnly ? "#f0fdf4" : "#fff",
-            }}
+        <div className={styles.editorArea}>
+          <Slate
+            editor={editor}
+            initialValue={editorValue}
+            onChange={handleChange}
           >
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.07em",
-                textTransform: "uppercase",
-                color: readOnly ? "#15803d" : "#6b7280",
-              }}
-            >
-              {readOnly ? "👁 Preview — select text to comment" : "✏️ Edit mode"}
-            </span>
-            {onCommentsWindowClose && (
-              <button
-                onClick={onCommentsWindowClose}
-                style={{
-                  fontSize: 11,
-                  padding: "2px 8px",
-                  borderRadius: 6,
-                  border: "1px solid #e5e7eb",
-                  background: "#f9fafb",
-                  cursor: "pointer",
-                  color: "#374151",
-                }}
-              >
-                Close comments
-              </button>
+            {!mode && (
+              <Toolbar
+                onClickSaveBtn={onClickSaveBtn ? handleSave : undefined}
+                buttonLabel="Save"
+                onDiscard={onDiscard ? handleDiscard : undefined}
+                hideFontActions={hideFontActions}
+                hideIndentActions={hideIndentActions}
+                hideAlignmentActions={hideAlignmentActions}
+              />
             )}
-          </div>
-
-          <Slate editor={editor} initialValue={editorValue} onChange={handleChange}>
-            <Toolbar editor={editor} readOnly={readOnly} />
             <Editable
-              decorate={decorate}
               renderLeaf={renderLeaf}
               renderElement={renderElement}
               readOnly={readOnly}
+              decorate={decorate}
               onKeyDown={handleKeyDown}
-              onMouseUp={handleSelectionChange}
-              onKeyUp={handleSelectionChange}
-              className={clsx("slate-editor-highlight", className)}
-              style={{
-                flex: 1,
-                padding: "20px 28px",
-                overflowY: "auto",
-                minHeight: 300,
-                outline: "none",
-                fontSize: 15,
-                lineHeight: 1.7,
-                color: "#1f2937",
-              }}
+              onMouseUp={handleMouseUp}
+              className={clsx(styles.editableArea, className)}
             />
           </Slate>
-
-          {onClickSaveBtn && !readOnly && (
-            <div
-              style={{
-                padding: "10px 16px",
-                borderTop: "1px solid #f3f4f6",
-                display: "flex",
-                gap: 8,
-                justifyContent: "flex-end",
-              }}
-            >
-              {onDiscard && (
-                <button
-                  onClick={onDiscard}
-                  style={{
-                    padding: "6px 16px",
-                    borderRadius: 8,
-                    border: "1px solid #e5e7eb",
-                    background: "#f9fafb",
-                    cursor: "pointer",
-                    fontSize: 13,
-                  }}
-                >
-                  Discard
-                </button>
-              )}
-              <button
-                onClick={() => onClickSaveBtn(editor.children)}
-                style={{
-                  padding: "6px 18px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "#2563eb",
-                  color: "#fff",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Save
-              </button>
-            </div>
-          )}
         </div>
-
-        {/* Comment sidebar */}
         {isShowComments && (
           <CommentSidebar
-            comments={comments}
-            activeId={activeCommentId}
-            onResolve={handleResolve}
-            onDelete={handleDelete}
-            onActivate={setActiveCommentId}
+            comments={storedComments}
+            setComments={setStoredComments}
+            onCommentsWindowClose={onCommentsWindowClose}
+            artifactJobID={artifactJobID}
+            activeCommentId={activeCommentId}
+            setActiveCommentId={setActiveCommentId}
+            activeCommentFunction={activeCommentFunction}
+          />
+        )}
+        {selection && (
+          <FloatingCommentToolbar
+            position={selection.position}
+            onAddComment={(text) => {
+              if (activeSpanRef.current) {
+                sendComment(text);
+                setSelection(null);
+              }
+            }}
           />
         )}
       </div>
-
-      {/* Floating comment bubble — only in readOnly */}
-      {readOnly && (
-        <div data-comment-bubble>
-          <FloatingCommentBubble
-            state={bubble}
-            onSubmit={handleSubmitComment}
-            onCancel={handleCancelComment}
-          />
-        </div>
-      )}
     </>
   );
 };
