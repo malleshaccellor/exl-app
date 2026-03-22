@@ -28,6 +28,27 @@ import {
 import FloatingCommentToolbar from "../FloatingCommentToolbar";
 import { v4 as uuid } from "uuid";
 
+// ---------------------------------------------------------------------------
+// withSelectionSync plugin
+// ---------------------------------------------------------------------------
+// Wraps editor.onChange so that every operation Slate applies (keystrokes,
+// deletes, pastes, cursor moves) calls an optional onSelectionChange callback
+// with the current live selection. This is the only reliable way to keep an
+// external Range in sync as the document mutates — reading editor.selection
+// inside React's onChange fires one render too late for decorate().
+// ---------------------------------------------------------------------------
+const withSelectionSync = (
+  editor: Editor,
+  onSelectionChange: (sel: Range | null) => void,
+) => {
+  const { onChange } = editor;
+  editor.onChange = (options) => {
+    onChange(options);
+    onSelectionChange(editor.selection);
+  };
+  return editor;
+};
+
 interface SlateEditorProps {
   value?: Descendant[];
   defaultValue?: Descendant[];
@@ -92,10 +113,38 @@ const SlateContentEditor = ({
   mode = false,
 }: SlateEditorProps) => {
   const dispatch = useAppDispatch();
-  const editor = useMemo(
-    () => withTables(withHistory(withReact(createEditor()))),
-    [],
-  );
+
+  // ---------------------------------------------------------------------------
+  // activeRange: the live Slate selection while the floating comment toolbar is
+  // open. Must be STATE so that decorate() re-runs on every change.
+  //
+  // Root cause of the stale-highlight bug: when the user has text selected and
+  // then types/deletes, Slate mutates the document AND the selection atomically
+  // inside editor.onChange. Reading editor.selection in React's onChange fires
+  // one render too late — decorate() has already run with the stale range.
+  //
+  // Fix: hook into editor.onChange directly via withSelectionSync (defined above
+  // the component). It calls setActiveRange synchronously as part of every Slate
+  // operation, so the next decorate() call always receives the up-to-date range.
+  // ---------------------------------------------------------------------------
+  const [activeRange, setActiveRange] = useState<Range | null>(null);
+  const activeRangeRef = useRef<Range | null>(null);
+
+  // isCommentingActiveRef: true only while the floating toolbar is visible.
+  // Prevents every cursor move from updating activeRange unnecessarily.
+  const isCommentingActiveRef = useRef(false);
+
+  const editor = useMemo(() => {
+    const baseEditor = withTables(withHistory(withReact(createEditor())));
+    return withSelectionSync(baseEditor, (sel) => {
+      if (!isCommentingActiveRef.current) return;
+      if (sel && !Range.isCollapsed(sel)) {
+        activeRangeRef.current = sel;
+        setActiveRange(sel);
+      }
+    });
+  }, []);
+
   const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
     [],
   );
@@ -104,18 +153,6 @@ const SlateContentEditor = ({
 
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
   const [selection, setSelection] = useState<EditorSelection | null>(null);
-
-  // FIX 1: Use state for activeRange so decorate() re-runs when it changes.
-  // The ref is kept only as a stable reference inside callbacks to avoid
-  // stale-closure issues (sendComment, handleMouseUp, etc.).
-  const [activeRange, setActiveRange] = useState<Range | null>(null);
-  const activeSpanRef = useRef<Range | null>(null);
-
-  // Helper to keep both in sync
-  const setActiveRangeAndRef = (range: Range | null) => {
-    activeSpanRef.current = range;
-    setActiveRange(range);
-  };
 
   const getCommentsData = useAppSelector((state) => state.comments.comments);
 
@@ -476,13 +513,15 @@ const SlateContentEditor = ({
       },
     });
 
-    // FIX 1: use helper so both ref and state stay in sync
-    setActiveRangeAndRef(slateSelection);
+    // Enable the withSelectionSync plugin to start tracking live selection
+    isCommentingActiveRef.current = true;
+    activeRangeRef.current = slateSelection;
+    setActiveRange(slateSelection);
   };
 
   const sendComment = useCallback(
     (text: string) => {
-      const range = activeSpanRef.current;
+      const range = activeRangeRef.current;
       if (!range || !selection) return;
 
       const commentId = uuid();
@@ -516,15 +555,17 @@ const SlateContentEditor = ({
       dispatch(addComments(addCommentPayload));
 
       setSelection(null);
-      // FIX 1: clear both ref and state
-      setActiveRangeAndRef(null);
+      // Stop live tracking and clear highlight
+      isCommentingActiveRef.current = false;
+      activeRangeRef.current = null;
+      setActiveRange(null);
       Transforms.deselect(editor);
     },
     [selection, artifactJobID],
   );
 
-  // FIX 1: decorate now depends on `activeRange` (state) instead of the ref,
-  // so Slate re-runs it whenever the selection changes or text is typed.
+  // activeRange is state (updated by withSelectionSync on every keystroke),
+  // so decorate() always re-runs with the latest live selection range.
   const decorate = useCallback(
     ([node, path]: any) => {
       const ranges: any[] = [];
@@ -559,7 +600,6 @@ const SlateContentEditor = ({
 
       return ranges;
     },
-    // FIX 1: activeRange (state) replaces the old ref in the dep array
     [storedComments, activeCommentId, activeRange, isShowComments],
   );
 
@@ -570,8 +610,9 @@ const SlateContentEditor = ({
       const toolbar = document.getElementById("floating-toolbar");
       if (toolbar && !toolbar.contains(e.target as Node)) {
         setSelection(null);
-        // FIX 1: clear both ref and state
-        setActiveRangeAndRef(null);
+        isCommentingActiveRef.current = false;
+        activeRangeRef.current = null;
+        setActiveRange(null);
         window.getSelection()?.removeAllRanges();
         Transforms.deselect(editor);
       }
@@ -585,8 +626,9 @@ const SlateContentEditor = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setSelection(null);
-        // FIX 1: clear both ref and state
-        setActiveRangeAndRef(null);
+        isCommentingActiveRef.current = false;
+        activeRangeRef.current = null;
+        setActiveRange(null);
         window.getSelection()?.removeAllRanges();
         Transforms.deselect(editor);
       }
@@ -677,7 +719,7 @@ const SlateContentEditor = ({
             <FloatingCommentToolbar
               position={selection.position}
               onAddComment={(text) => {
-                if (activeSpanRef.current) {
+                if (activeRangeRef.current) {
                   sendComment(text);
                   setSelection(null);
                 }
