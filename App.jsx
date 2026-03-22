@@ -120,8 +120,17 @@ const SlateContentEditor = ({
     const base = withTables(withHistory(withReact(createEditor())));
     return withSelectionSync(base, (sel) => {
       if (!isCommentingActiveRef.current) return;
+      // Always store the latest selection in the ref (used by sendComment).
       activeRangeRef.current = sel;
-      setActiveRange(sel);
+      // Only push to state (which triggers decorate re-run) when the selection
+      // is non-collapsed. When the user types/deletes, Slate fires onChange with
+      // a collapsed cursor — we must NOT clear activeRange at that point or the
+      // temp highlight vanishes. The highlight will naturally reflect the live
+      // editor.selection because decorate() reads `activeRange` state, and we
+      // only update that state on genuine non-collapsed selection changes.
+      if (sel && !Range.isCollapsed(sel)) {
+        setActiveRange(sel);
+      }
     });
   }, []);
 
@@ -411,12 +420,19 @@ const SlateContentEditor = ({
       };
 
       // 1. Temporary highlight (floating toolbar open)
-      if (activeRange) {
+      // Read editor.selection DIRECTLY here (not activeRange state) so the
+      // highlight always reflects the current live selection — even mid-keystroke.
+      // activeRange state lags one render behind when the user types because
+      // withSelectionSync only pushes state updates for non-collapsed selections.
+      // editor.selection is the synchronous ground truth inside Slate's own
+      // reconciliation pass, so decorate() always sees the correct value.
+      const liveRange = isCommentingActiveRef.current ? editor.selection : null;
+      if (liveRange && !Range.isCollapsed(liveRange)) {
         try {
-          const intersection = Range.intersection(activeRange, nodeRange);
+          const intersection = Range.intersection(liveRange, nodeRange);
           if (intersection) ranges.push({ ...intersection, isTempHighlight: true });
         } catch {
-          // Stale activeRange after undo — skip
+          // Skip if range paths are transiently invalid
         }
       }
 
