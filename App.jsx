@@ -28,27 +28,6 @@ import {
 import FloatingCommentToolbar from "../FloatingCommentToolbar";
 import { v4 as uuid } from "uuid";
 
-// ---------------------------------------------------------------------------
-// withSelectionSync plugin
-// ---------------------------------------------------------------------------
-// Wraps editor.onChange so that every operation Slate applies (keystrokes,
-// deletes, pastes, cursor moves) calls an optional onSelectionChange callback
-// with the current live selection. This is the only reliable way to keep an
-// external Range in sync as the document mutates — reading editor.selection
-// inside React's onChange fires one render too late for decorate().
-// ---------------------------------------------------------------------------
-const withSelectionSync = (
-  editor: Editor,
-  onSelectionChange: (sel: Range | null) => void,
-) => {
-  const { onChange } = editor;
-  editor.onChange = (options) => {
-    onChange(options);
-    onSelectionChange(editor.selection);
-  };
-  return editor;
-};
-
 interface SlateEditorProps {
   value?: Descendant[];
   defaultValue?: Descendant[];
@@ -73,7 +52,7 @@ interface Comment {
   createdAt: string;
   resolved: boolean;
   replies: any[];
-  range: any;
+  range: any; // Slate Range
   selectedText: string;
 }
 interface EditorSelection {
@@ -82,8 +61,8 @@ interface EditorSelection {
     top: number;
     left: number;
   };
-  rowIndex?: number | string;
-  colField?: string;
+  rowIndex?: number | string; // Added to match your payload
+  colField?: string; // Added to match your payload
 }
 
 const toggleMark = (editor: Editor, format: textStyle) => {
@@ -94,7 +73,6 @@ const toggleMark = (editor: Editor, format: textStyle) => {
     Editor.addMark(editor, format, true);
   }
 };
-
 const SlateContentEditor = ({
   value,
   defaultValue = [],
@@ -113,38 +91,10 @@ const SlateContentEditor = ({
   mode = false,
 }: SlateEditorProps) => {
   const dispatch = useAppDispatch();
-
-  // ---------------------------------------------------------------------------
-  // activeRange: the live Slate selection while the floating comment toolbar is
-  // open. Must be STATE so that decorate() re-runs on every change.
-  //
-  // Root cause of the stale-highlight bug: when the user has text selected and
-  // then types/deletes, Slate mutates the document AND the selection atomically
-  // inside editor.onChange. Reading editor.selection in React's onChange fires
-  // one render too late — decorate() has already run with the stale range.
-  //
-  // Fix: hook into editor.onChange directly via withSelectionSync (defined above
-  // the component). It calls setActiveRange synchronously as part of every Slate
-  // operation, so the next decorate() call always receives the up-to-date range.
-  // ---------------------------------------------------------------------------
-  const [activeRange, setActiveRange] = useState<Range | null>(null);
-  const activeRangeRef = useRef<Range | null>(null);
-
-  // isCommentingActiveRef: true only while the floating toolbar is visible.
-  // Prevents every cursor move from updating activeRange unnecessarily.
-  const isCommentingActiveRef = useRef(false);
-
-  const editor = useMemo(() => {
-    const baseEditor = withTables(withHistory(withReact(createEditor())));
-    return withSelectionSync(baseEditor, (sel) => {
-      if (!isCommentingActiveRef.current) return;
-      if (sel && !Range.isCollapsed(sel)) {
-        activeRangeRef.current = sel;
-        setActiveRange(sel);
-      }
-    });
-  }, []);
-
+  const editor = useMemo(
+    () => withTables(withHistory(withReact(createEditor()))),
+    [],
+  );
   const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
     [],
   );
@@ -153,23 +103,28 @@ const SlateContentEditor = ({
 
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
   const [selection, setSelection] = useState<EditorSelection | null>(null);
+  const activeSpanRef = useRef<Range | null>(null);
 
   const getCommentsData = useAppSelector((state) => state.comments.comments);
-
   const addCommentMark = (editor: Editor, range: Range, commentId: string) => {
+    // 1. Force the selection to the comment range
     Transforms.select(editor, range);
+
+    // 2. Apply the mark and split the nodes at the range boundaries
+    // This ensures a new 'leaf' is created specifically for this comment
     Transforms.setNodes(
       editor,
       { commentId },
       {
         at: range,
         match: (n) => Text.isText(n),
-        split: true,
+        split: true, // CRITICAL: This forces Slate to create a separate leaf for the highlight
       },
     );
+
+    // 3. Deselect to remove the browser's native blue highlight
     Transforms.deselect(editor);
   };
-
   const removeCommentMark = (editor: Editor, commentId: string): void => {
     const nodes = Array.from(
       Editor.nodes(editor, {
@@ -177,6 +132,7 @@ const SlateContentEditor = ({
         match: (n) => Text.isText(n) && (n as any).commentId === commentId,
       }),
     );
+
     for (const [, path] of nodes) {
       Transforms.unsetNodes(editor, "commentId", { at: path });
     }
@@ -202,7 +158,7 @@ const SlateContentEditor = ({
       rowIndex: com.rowIndex,
       colField: com.colField,
       text: com.text,
-      range: com.range,
+      range: com.range, // The Slate Range {anchor, focus} from API
       comment: com.comment,
       time: com.createdAt,
       userId: com.useId,
@@ -216,23 +172,21 @@ const SlateContentEditor = ({
     }));
     setStoredComments(existingComments);
   }, [getCommentsData, artifactJobID]);
-
   const deletedCommentsData = useAppSelector(
     (state) => state.comments.deleteComment,
   );
+
   const updatedCommentData = useAppSelector(
     (state) => state.comments.updateComment,
   );
   const uploadCommentData = useAppSelector(
     (state) => state.comments.addComment,
   );
-
   useEffect(() => {
     if (artifactJobID) {
       dispatch(fetchComments(artifactJobID));
     }
   }, [uploadCommentData?.data]);
-
   useEffect(() => {
     if (deletedCommentsData?.message === "OK" && artifactJobID) {
       dispatch(fetchComments(artifactJobID));
@@ -242,6 +196,7 @@ const SlateContentEditor = ({
     }
   }, [deletedCommentsData, updatedCommentData]);
 
+  // Keep callbacks in refs to avoid stale closures
   const onSaveRef = useRef(onClickSaveBtn);
   onSaveRef.current = onClickSaveBtn;
   const onDiscardRef = useRef(onDiscard);
@@ -259,11 +214,21 @@ const SlateContentEditor = ({
     [value, internalValue],
   );
 
+  // const handleChange = useCallback(
+  //   (val: Descendant[]) => {
+  //     if (!value) {
+  //       setInternalValue(val);
+  //     }
+  //     onChange?.(val);
+  //   },
+  //   [value, onChange],
+  // );
   const handleChange = useCallback(
     (val: Descendant[]) => {
       if (!value) {
         setInternalValue(val);
       }
+
       onChange?.(val);
     },
     [value, onChange],
@@ -279,6 +244,7 @@ const SlateContentEditor = ({
 
   const renderLeaf = useCallback(
     ({ attributes, children, leaf }: any) => {
+      // Standard marks
       if (leaf.bold) children = <strong>{children}</strong>;
       if (leaf.italic) children = <em>{children}</em>;
       if (leaf.underline) children = <u>{children}</u>;
@@ -294,15 +260,14 @@ const SlateContentEditor = ({
       }
 
       if (leaf.commentId) {
+        const isActive = leaf.isActive;
+
         children = (
-          // FIX 2 (part a): stamp data-comment-id so the DOM fallback scroll
-          // in activeCommentFunction can find the highlighted element.
           <mark
             {...attributes}
-            data-comment-id={leaf.commentId}
             className={clsx(
               styles.commentHighlight,
-              leaf.isActive && styles.activeHighlight,
+              isActive && styles.activeHighlight,
             )}
           >
             {children}
@@ -382,6 +347,7 @@ const SlateContentEditor = ({
               {children}
             </li>
           );
+
         case "block-quote":
           return (
             <blockquote
@@ -396,6 +362,7 @@ const SlateContentEditor = ({
               {children}
             </blockquote>
           );
+
         case "code-block":
           return (
             <pre
@@ -489,6 +456,7 @@ const SlateContentEditor = ({
   const handleMouseUp = (e: React.MouseEvent) => {
     if (!isShowComments) return;
 
+    // Get the Slate selection instead of DOM selection
     const { selection: slateSelection } = editor;
 
     if (!slateSelection || Range.isCollapsed(slateSelection)) return;
@@ -513,18 +481,25 @@ const SlateContentEditor = ({
       },
     });
 
-    // Enable the withSelectionSync plugin to start tracking live selection
-    isCommentingActiveRef.current = true;
-    activeRangeRef.current = slateSelection;
-    setActiveRange(slateSelection);
+    // Store the SLATE selection, not the DOM range
+    activeSpanRef.current = slateSelection;
   };
 
   const sendComment = useCallback(
     (text: string) => {
-      const range = activeRangeRef.current;
+      const range = activeSpanRef.current;
       if (!range || !selection) return;
 
       const commentId = uuid();
+
+      try {
+        Transforms.select(editor, range);
+        if (editor.selection && !Range.isCollapsed(editor.selection)) {
+          Editor.addMark(editor, "commentId", commentId);
+        }
+      } catch (e) {
+        console.warn("Could not apply comment mark:", e);
+      }
 
       const newComment = {
         id: commentId,
@@ -534,8 +509,10 @@ const SlateContentEditor = ({
         selectedText: selection.text,
       };
 
-      setStoredComments((prev) => [...prev, newComment]);
-
+      setStoredComments((prev) => {
+        const updated = [...prev, newComment];
+        return updated;
+      });
       const addCommentPayload: any = {
         commentType: "comment",
         commentId: "",
@@ -554,53 +531,12 @@ const SlateContentEditor = ({
       };
       dispatch(addComments(addCommentPayload));
 
+      // Clean up UI
       setSelection(null);
-      // Stop live tracking and clear highlight
-      isCommentingActiveRef.current = false;
-      activeRangeRef.current = null;
-      setActiveRange(null);
+      activeSpanRef.current = null;
       Transforms.deselect(editor);
     },
     [selection, artifactJobID],
-  );
-
-  // activeRange is state (updated by withSelectionSync on every keystroke),
-  // so decorate() always re-runs with the latest live selection range.
-  const decorate = useCallback(
-    ([node, path]: any) => {
-      const ranges: any[] = [];
-      if (!Text.isText(node)) return ranges;
-
-      if (activeRange) {
-        const intersection = Range.intersection(activeRange, {
-          anchor: { path, offset: 0 },
-          focus: { path, offset: node.text.length },
-        });
-        if (intersection)
-          ranges.push({ ...intersection, isTempHighlight: true });
-      }
-
-      if (isShowComments) {
-        storedComments.forEach((comment: any) => {
-          if (comment.range) {
-            const intersection = Range.intersection(comment.range, {
-              anchor: { path, offset: 0 },
-              focus: { path, offset: node.text.length },
-            });
-            if (intersection) {
-              ranges.push({
-                ...intersection,
-                commentId: comment.id,
-                isActive: comment.id === activeCommentId,
-              });
-            }
-          }
-        });
-      }
-
-      return ranges;
-    },
-    [storedComments, activeCommentId, activeRange, isShowComments],
   );
 
   useEffect(() => {
@@ -608,27 +544,32 @@ const SlateContentEditor = ({
 
     const handleMouseDown = (e: MouseEvent) => {
       const toolbar = document.getElementById("floating-toolbar");
+
+      // If we click outside the toolbar
       if (toolbar && !toolbar.contains(e.target as Node)) {
+        // 1. Remove the Toolbar
         setSelection(null);
-        isCommentingActiveRef.current = false;
-        activeRangeRef.current = null;
-        setActiveRange(null);
+
+        // 2. CRITICAL: Clear the Ref to remove the Light Blue highlight
+        activeSpanRef.current = null;
+
+        // 3. FIX DOUBLE-CLICK: Clear the browser's blue ghost selection
         window.getSelection()?.removeAllRanges();
+
+        // 4. Force Slate to deselect
         Transforms.deselect(editor);
       }
     };
 
     document.addEventListener("mousedown", handleMouseDown);
     return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [selection, editor]);
+  }, [selection, editor]); // Add editor to dependencies
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setSelection(null);
-        isCommentingActiveRef.current = false;
-        activeRangeRef.current = null;
-        setActiveRange(null);
+        activeSpanRef.current = null;
         window.getSelection()?.removeAllRanges();
         Transforms.deselect(editor);
       }
@@ -637,46 +578,37 @@ const SlateContentEditor = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // FIX 2: Robust scroll-to-comment.
-  // toDOMRange() throws when the Slate range no longer maps to valid DOM nodes
-  // (e.g. after text edits). An inner try/catch falls back to querying the
-  // <mark data-comment-id="..."> element rendered by renderLeaf.
   const activeCommentFunction = (commentId: string | undefined) => {
     setActiveCommentId(commentId);
-    if (!commentId) return;
 
+    if (!commentId) return;
     const target = storedComments.find((c: any) => c.id === commentId);
 
     if (target?.range) {
       try {
+        // 3. Focus and select the text in Slate
         ReactEditor.focus(editor);
         Transforms.select(editor, target.range);
 
-        try {
-          // Primary: use Slate's DOM range (may throw if range is stale)
-          const domRange = ReactEditor.toDOMRange(editor, target.range);
-          domRange.startContainer.parentElement?.scrollIntoView({
-            behavior: "smooth",
-            block: "center",
-          });
-        } catch {
-          // Fallback: find the rendered <mark> by the data attribute we
-          // stamped in renderLeaf — always works even after edits.
-          const markEl = document.querySelector(
-            `mark[data-comment-id="${commentId}"]`,
-          );
-          markEl?.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
+        // 4. Scroll the Slate editor to the text
+        const domRange = ReactEditor.toDOMRange(editor, target.range);
+        domRange.startContainer.parentElement?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
       } catch (e) {
         console.warn("Could not scroll to comment range", e);
       }
     }
 
-    // Scroll the sidebar card into view
+    // 5. Scroll the sidebar (existing logic)
     requestAnimationFrame(() => {
       const el = document.getElementById(`comment-${commentId}`);
       if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
       }
     });
   };
@@ -709,7 +641,6 @@ const SlateContentEditor = ({
               renderLeaf={renderLeaf}
               renderElement={renderElement}
               readOnly={readOnly}
-              decorate={decorate}
               onKeyDown={handleKeyDown}
               onMouseUp={handleMouseUp}
               className={clsx(styles.editableArea, className)}
@@ -719,7 +650,7 @@ const SlateContentEditor = ({
             <FloatingCommentToolbar
               position={selection.position}
               onAddComment={(text) => {
-                if (activeRangeRef.current) {
+                if (activeSpanRef.current) {
                   sendComment(text);
                   setSelection(null);
                 }
