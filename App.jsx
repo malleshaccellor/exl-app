@@ -32,7 +32,7 @@ interface SlateEditorProps {
   value?: Descendant[];
   defaultValue?: Descendant[];
   onChange?: (value: Descendant[]) => void;
-  readOnly?: boolean;
+  isPreview?: boolean;
   onClickSaveBtn?: (nodes: Descendant[]) => void;
   className?: string;
   data?: Record<string, any>;
@@ -43,7 +43,6 @@ interface SlateEditorProps {
   isShowComments?: boolean;
   onCommentsWindowClose?: () => void;
   artifactJobID?: string;
-  mode?: boolean;
 }
 
 interface EditorSelection {
@@ -69,7 +68,7 @@ const SlateContentEditor = ({
   value,
   defaultValue = [],
   onChange,
-  readOnly,
+  isPreview,
   onClickSaveBtn,
   className,
   data,
@@ -80,45 +79,38 @@ const SlateContentEditor = ({
   isShowComments = false,
   onCommentsWindowClose,
   artifactJobID,
-  mode = false,
 }: SlateEditorProps) => {
   const dispatch = useAppDispatch();
   const editor = useMemo(
     () => withTables(withHistory(withReact(createEditor()))),
     [],
   );
-  const [storedComments, setStoredComments] = useState<storedCommentsType[]>([]);
+  const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
+    [],
+  );
 
   const usersDetails = useAppSelector((state) => state.users.userDetails);
   const [activeCommentId, setActiveCommentId] = useState<string | undefined>();
   const [selection, setSelection] = useState<EditorSelection | null>(null);
-
-  // FIX: tempRange is STATE (not just a ref) so updating it triggers decorate()
-  // to re-run and actually render the isTempHighlight span.
-  // A plain ref mutation is invisible to React — the highlight would never appear.
   const [tempRange, setTempRange] = useState<Range | null>(null);
-  // Ref kept in sync for synchronous reads inside callbacks (avoids stale closures)
   const activeSpanRef = useRef<Range | null>(null);
 
   const getCommentsData = useAppSelector((state) => state.comments.comments);
 
-  // ─── Helper: always update ref AND state together ───────────────────────────
   const setActiveRange = useCallback((range: Range | null) => {
     activeSpanRef.current = range;
     setTempRange(range);
   }, []);
 
-  // ─── Mark Helpers ───────────────────────────────────────────────────────────
-
   const addCommentMark = useCallback(
     (range: Range, commentId: string) => {
       const previousSelection = editor.selection;
       Transforms.select(editor, range);
-      Transforms.setNodes(
-        editor,
-        { commentId } as Partial<Text>,
-        { at: range, match: (n) => Text.isText(n), split: true },
-      );
+      Transforms.setNodes(editor, { commentId } as Partial<Text>, {
+        at: range,
+        match: (n) => Text.isText(n),
+        split: true,
+      });
       if (previousSelection) {
         Transforms.select(editor, previousSelection);
       } else {
@@ -143,15 +135,19 @@ const SlateContentEditor = ({
     [editor],
   );
 
-  // ─── Fetch comments ─────────────────────────────────────────────────────────
-
   useEffect(() => {
     if (artifactJobID) dispatch(fetchComments(artifactJobID));
   }, []);
 
-  const deletedCommentsData = useAppSelector((state) => state.comments.deleteComment);
-  const updatedCommentData = useAppSelector((state) => state.comments.updateComment);
-  const uploadCommentData = useAppSelector((state) => state.comments.addComment);
+  const deletedCommentsData = useAppSelector(
+    (state) => state.comments.deleteComment,
+  );
+  const updatedCommentData = useAppSelector(
+    (state) => state.comments.updateComment,
+  );
+  const uploadCommentData = useAppSelector(
+    (state) => state.comments.addComment,
+  );
 
   useEffect(() => {
     if (artifactJobID) dispatch(fetchComments(artifactJobID));
@@ -163,8 +159,6 @@ const SlateContentEditor = ({
     if (updatedCommentData?.message === "OK" && artifactJobID)
       dispatch(fetchComments(artifactJobID));
   }, [deletedCommentsData, updatedCommentData]);
-
-  // ─── Sync storedComments + marks ────────────────────────────────────────────
 
   useEffect(() => {
     if (getCommentsData?.jobId !== artifactJobID) {
@@ -199,14 +193,16 @@ const SlateContentEditor = ({
 
     existingComments.forEach((c: any) => {
       if (c.range) {
-        try { addCommentMark(c.range, c.id); } catch { /* stale range */ }
+        try {
+          addCommentMark(c.range, c.id);
+        } catch {
+          /* stale range */
+        }
       }
     });
 
     setStoredComments(existingComments);
   }, [getCommentsData, artifactJobID]);
-
-  // ─── Editor value ────────────────────────────────────────────────────────────
 
   const onSaveRef = useRef(onClickSaveBtn);
   onSaveRef.current = onClickSaveBtn;
@@ -218,8 +214,12 @@ const SlateContentEditor = ({
     return defaultValue;
   }, [data, defaultValue]);
 
-  const [internalValue, setInternalValue] = useState<Descendant[]>(computedDefault);
-  const editorValue = useMemo(() => value ?? internalValue, [value, internalValue]);
+  const [internalValue, setInternalValue] =
+    useState<Descendant[]>(computedDefault);
+  const editorValue = useMemo(
+    () => value ?? internalValue,
+    [value, internalValue],
+  );
 
   const handleChange = useCallback(
     (val: Descendant[]) => {
@@ -237,28 +237,33 @@ const SlateContentEditor = ({
     onDiscardRef.current?.();
   }, []);
 
-  // ─── Rendering ──────────────────────────────────────────────────────────────
+  const renderLeaf = useCallback(({ attributes, children, leaf }: any) => {
+    if (leaf.bold) children = <strong>{children}</strong>;
+    if (leaf.italic) children = <em>{children}</em>;
+    if (leaf.underline) children = <u>{children}</u>;
+    if (leaf.strikethrough) children = <s>{children}</s>;
+    if (leaf.code) children = <code>{children}</code>;
 
-  const renderLeaf = useCallback(
-    ({ attributes, children, leaf }: any) => {
-      if (leaf.bold) children = <strong>{children}</strong>;
-      if (leaf.italic) children = <em>{children}</em>;
-      if (leaf.underline) children = <u>{children}</u>;
-      if (leaf.strikethrough) children = <s>{children}</s>;
-      if (leaf.code) children = <code>{children}</code>;
+    if (leaf.isTempHighlight) {
+      children = <span className={styles.commentSelection}>{children}</span>;
+    }
 
-      if (leaf.isTempHighlight) {
-        children = <span className={styles.commentSelection}>{children}</span>;
-      }
+    if (leaf.commentId) {
+      children = (
+        <mark
+          data-comment-id={leaf.commentId}
+          className={clsx(
+            styles.commentHighlight,
+            leaf.isActive && styles.commentHighlightActive,
+          )}
+        >
+          {children}
+        </mark>
+      );
+    }
 
-      if (leaf.commentId) {
-        children = <mark className={styles.commentHighlight}>{children}</mark>;
-      }
-
-      return <span {...attributes}>{children}</span>;
-    },
-    [],
-  );
+    return <span {...attributes}>{children}</span>;
+  }, []);
 
   const renderElement = useCallback(
     ({ attributes, children, element }: any) => {
@@ -270,27 +275,63 @@ const SlateContentEditor = ({
 
       switch (element.type) {
         case "heading-one":
-          return <h1 {...attributes} style={style}>{children}</h1>;
+          return (
+            <h1 {...attributes} style={style}>
+              {children}
+            </h1>
+          );
         case "heading-two":
-          return <h2 {...attributes} style={style}>{children}</h2>;
+          return (
+            <h2 {...attributes} style={style}>
+              {children}
+            </h2>
+          );
         case "heading-three":
-          return <h3 {...attributes} style={style}>{children}</h3>;
+          return (
+            <h3 {...attributes} style={style}>
+              {children}
+            </h3>
+          );
         case "heading-four":
-          return <h4 {...attributes} style={style}>{children}</h4>;
+          return (
+            <h4 {...attributes} style={style}>
+              {children}
+            </h4>
+          );
         case "heading-five":
           return (
-            <h5 {...attributes} style={style} className={element.className || "heading-five"}>
+            <h5
+              {...attributes}
+              style={style}
+              className={element.className || "heading-five"}
+            >
               {children}
             </h5>
           );
         case "heading-six":
-          return <h6 {...attributes} style={style}>{children}</h6>;
+          return (
+            <h6 {...attributes} style={style}>
+              {children}
+            </h6>
+          );
         case "bulleted-list":
-          return <ul {...attributes} style={style}>{children}</ul>;
+          return (
+            <ul {...attributes} style={style}>
+              {children}
+            </ul>
+          );
         case "numbered-list":
-          return <ol {...attributes} style={style}>{children}</ol>;
+          return (
+            <ol {...attributes} style={style}>
+              {children}
+            </ol>
+          );
         case "list-item":
-          return <li {...attributes} style={style}>{children}</li>;
+          return (
+            <li {...attributes} style={style}>
+              {children}
+            </li>
+          );
         case "block-quote":
           return (
             <blockquote
@@ -307,7 +348,10 @@ const SlateContentEditor = ({
           );
         case "code-block":
           return (
-            <pre {...attributes} style={{ background: "#f5f5f5", padding: 12, ...style }}>
+            <pre
+              {...attributes}
+              style={{ background: "#f5f5f5", padding: 12, ...style }}
+            >
               <code>{children}</code>
             </pre>
           );
@@ -318,22 +362,44 @@ const SlateContentEditor = ({
             </table>
           );
         case "table-row":
-          return <tr {...attributes} style={style}>{children}</tr>;
+          return (
+            <tr {...attributes} style={style}>
+              {children}
+            </tr>
+          );
         case "table-cell-header":
-          return <th {...attributes} style={style}>{children}</th>;
+          return (
+            <th {...attributes} style={style}>
+              {children}
+            </th>
+          );
         case "table-cell":
-          return element.isHeader
-            ? <th {...attributes} style={style}>{children}</th>
-            : <td {...attributes} style={style}>{children}</td>;
+          return element.isHeader ? (
+            <th {...attributes} style={style}>
+              {children}
+            </th>
+          ) : (
+            <td {...attributes} style={style}>
+              {children}
+            </td>
+          );
         case "paragraph":
           return (
-            <p {...attributes} style={style} className={element.className || "paragraph"}>
+            <p
+              {...attributes}
+              style={style}
+              className={element.className || "paragraph"}
+            >
               {children}
             </p>
           );
         default:
           return (
-            <p {...attributes} style={style} className={element.className || "paragraph"}>
+            <p
+              {...attributes}
+              style={style}
+              className={element.className || "paragraph"}
+            >
               {children}
             </p>
           );
@@ -342,21 +408,26 @@ const SlateContentEditor = ({
     [],
   );
 
-  // ─── Keyboard shortcuts ──────────────────────────────────────────────────────
-
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
       if (!event.ctrlKey && !event.metaKey) return;
       switch (event.key) {
-        case "b": event.preventDefault(); toggleMark(editor, "bold"); break;
-        case "i": event.preventDefault(); toggleMark(editor, "italic"); break;
-        case "u": event.preventDefault(); toggleMark(editor, "underline"); break;
+        case "b":
+          event.preventDefault();
+          toggleMark(editor, "bold");
+          break;
+        case "i":
+          event.preventDefault();
+          toggleMark(editor, "italic");
+          break;
+        case "u":
+          event.preventDefault();
+          toggleMark(editor, "underline");
+          break;
       }
     },
     [editor],
   );
-
-  // ─── Mouse selection → temp highlight ───────────────────────────────────────
 
   const handleMouseUp = () => {
     if (!isShowComments) return;
@@ -382,8 +453,6 @@ const SlateContentEditor = ({
       position: { left: lastRect.right, top: lastRect.bottom },
     });
 
-    // FIX: setActiveRange updates both ref AND tempRange state
-    // so decorate() re-runs and renders the isTempHighlight
     setActiveRange(slateSelection);
   };
 
@@ -408,19 +477,21 @@ const SlateContentEditor = ({
 
       setStoredComments((prev) => [...prev, newComment]);
 
-      dispatch(addComments({
-        commentType: "comment",
-        commentId: "",
-        jobId: artifactJobID || "",
-        createdById: usersDetails?.id,
-        userType: "",
-        comment: text,
-        rowIndex: selection?.rowIndex,
-        colField: selection?.colField,
-        range,
-        text: selection.text,
-        position: selection.position,
-      }));
+      dispatch(
+        addComments({
+          commentType: "comment",
+          commentId: "",
+          jobId: artifactJobID || "",
+          createdById: usersDetails?.id,
+          userType: "",
+          comment: text,
+          rowIndex: selection?.rowIndex,
+          colField: selection?.colField,
+          range,
+          text: selection.text,
+          position: selection.position,
+        }),
+      );
 
       setSelection(null);
       setActiveRange(null); // clears ref + tempRange → removes temp highlight
@@ -429,16 +500,12 @@ const SlateContentEditor = ({
     [selection, artifactJobID, addCommentMark, editor, setActiveRange],
   );
 
-  // ─── Decorate: temp highlight only ──────────────────────────────────────────
-  // FIX: depend on `tempRange` (state), not `activeSpanRef` (ref).
-  // React only re-runs useCallback when state changes, not ref mutations.
-
   const decorate = useCallback(
     ([node, path]: any) => {
       const ranges: any[] = [];
       if (!Text.isText(node)) return ranges;
 
-      if (tempRange) {
+      if (tempRange && isPreview) {
         const intersection = Range.intersection(tempRange, {
           anchor: { path, offset: 0 },
           focus: { path, offset: node.text.length },
@@ -448,12 +515,29 @@ const SlateContentEditor = ({
         }
       }
 
+      if (isShowComments) {
+        storedComments.forEach((comment: any) => {
+          if (comment.range) {
+            const intersection = Range.intersection(comment.range, {
+              anchor: { path, offset: 0 },
+              focus: { path, offset: node.text.length },
+            });
+
+            if (intersection) {
+              ranges.push({
+                ...intersection,
+                commentId: comment.id,
+                isActive: comment.id === activeCommentId,
+              });
+            }
+          }
+        });
+      }
+
       return ranges;
     },
-    [tempRange], // re-runs whenever tempRange state changes
+    [tempRange, activeCommentId, isShowComments, storedComments],
   );
-
-  // ─── Click-outside closes floating toolbar ───────────────────────────────────
 
   useEffect(() => {
     if (!selection) return;
@@ -483,8 +567,6 @@ const SlateContentEditor = ({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [editor, setActiveRange]);
 
-  // ─── Sidebar: scroll-to + activate comment ───────────────────────────────────
-
   const activeCommentFunction = (commentId: string | undefined) => {
     setActiveCommentId(commentId);
     if (!commentId) return;
@@ -512,8 +594,6 @@ const SlateContentEditor = ({
     });
   };
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
-
   return (
     <>
       <div
@@ -522,9 +602,13 @@ const SlateContentEditor = ({
           isShowComments && styles.editorWithComments,
         )}
       >
-        <div className={styles.editorArea}>
-          <Slate editor={editor} initialValue={editorValue} onChange={handleChange}>
-            {!mode && (
+        <div className={clsx(styles.editorArea, isShowComments && styles.commentsVisible)}>
+          <Slate
+            editor={editor}
+            initialValue={editorValue}
+            onChange={handleChange}
+          >
+            {!isPreview && (
               <Toolbar
                 onClickSaveBtn={onClickSaveBtn ? handleSave : undefined}
                 buttonLabel="Save"
@@ -537,15 +621,14 @@ const SlateContentEditor = ({
             <Editable
               renderLeaf={renderLeaf}
               renderElement={renderElement}
-              readOnly={readOnly}
+              readOnly={isPreview}
               decorate={decorate}
               onKeyDown={handleKeyDown}
               onMouseUp={handleMouseUp}
               className={clsx(styles.editableArea, className)}
             />
           </Slate>
-
-          {selection && (
+          {selection && isPreview && (
             <FloatingCommentToolbar
               position={selection.position}
               onAddComment={(text) => {
