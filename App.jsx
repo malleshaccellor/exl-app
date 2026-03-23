@@ -24,7 +24,6 @@ import type {
 import {
   addComments,
   fetchComments,
-  updateComments, // ← make sure this action exists in your store
 } from "../../store/reducer/comments/action";
 import FloatingCommentToolbar from "../FloatingCommentToolbar";
 import { v4 as uuid } from "uuid";
@@ -34,12 +33,7 @@ interface SlateEditorProps {
   defaultValue?: Descendant[];
   onChange?: (value: Descendant[]) => void;
   isPreview?: boolean;
-  // Updated signature: also receives the remapped comments so the caller
-  // can persist the fresh ranges to the backend.
-  onClickSaveBtn?: (
-    nodes: Descendant[],
-    updatedComments?: storedCommentsType[]
-  ) => void;
+  onClickSaveBtn?: (nodes: Descendant[]) => void;
   className?: string;
   data?: Record<string, any>;
   onDiscard?: () => void;
@@ -89,10 +83,10 @@ const SlateContentEditor = ({
   const dispatch = useAppDispatch();
   const editor = useMemo(
     () => withTables(withHistory(withReact(createEditor()))),
-    []
+    [],
   );
   const [storedComments, setStoredComments] = useState<storedCommentsType[]>(
-    []
+    [],
   );
 
   const usersDetails = useAppSelector((state) => state.users.userDetails);
@@ -123,7 +117,7 @@ const SlateContentEditor = ({
         Transforms.deselect(editor);
       }
     },
-    [editor]
+    [editor],
   );
 
   const removeCommentMark = useCallback(
@@ -132,13 +126,13 @@ const SlateContentEditor = ({
         Editor.nodes(editor, {
           at: [],
           match: (n) => Text.isText(n) && (n as any).commentId === commentId,
-        })
+        }),
       );
       for (const [, path] of nodes) {
         Transforms.unsetNodes(editor, "commentId", { at: path });
       }
     },
-    [editor]
+    [editor],
   );
 
   useEffect(() => {
@@ -146,13 +140,13 @@ const SlateContentEditor = ({
   }, []);
 
   const deletedCommentsData = useAppSelector(
-    (state) => state.comments.deleteComment
+    (state) => state.comments.deleteComment,
   );
   const updatedCommentData = useAppSelector(
-    (state) => state.comments.updateComment
+    (state) => state.comments.updateComment,
   );
   const uploadCommentData = useAppSelector(
-    (state) => state.comments.addComment
+    (state) => state.comments.addComment,
   );
 
   useEffect(() => {
@@ -224,7 +218,7 @@ const SlateContentEditor = ({
     useState<Descendant[]>(computedDefault);
   const editorValue = useMemo(
     () => value ?? internalValue,
-    [value, internalValue]
+    [value, internalValue],
   );
 
   const handleChange = useCallback(
@@ -232,81 +226,12 @@ const SlateContentEditor = ({
       if (!value) setInternalValue(val);
       onChange?.(val);
     },
-    [value, onChange]
-  );
-
-  /**
-   * Remaps every stored comment's range to wherever its `commentId` mark
-   * currently lives in the editor tree.  This is necessary because editing
-   * text inside (or before) a commented region shifts Slate's path/offset
-   * values, making the originally-saved Range stale.
-   *
-   * Strategy:
-   *  1. Walk all text nodes that still carry a given `commentId`.
-   *  2. Derive a fresh Range from the first node's start → last node's end.
-   *  3. Return the updated comment list so it can be persisted.
-   */
-  const remapCommentRanges = useCallback(
-    (comments: storedCommentsType[]): storedCommentsType[] => {
-      return comments.map((comment: any) => {
-        // Find every text leaf currently marked with this comment's id
-        const matchingNodes = Array.from(
-          Editor.nodes(editor, {
-            at: [],
-            match: (n) =>
-              Text.isText(n) && (n as any).commentId === comment.id,
-          })
-        );
-
-        // If no nodes found the commented text was deleted — keep old range
-        // so the sidebar can still show it (caller decides what to do).
-        if (matchingNodes.length === 0) return comment;
-
-        const [firstNode, firstPath] = matchingNodes[0];
-        const [lastNode, lastPath] =
-          matchingNodes[matchingNodes.length - 1];
-
-        const updatedRange: Range = {
-          anchor: { path: firstPath, offset: 0 },
-          focus: {
-            path: lastPath,
-            offset: (lastNode as Text).text.length,
-          },
-        };
-
-        return { ...comment, range: updatedRange };
-      });
-    },
-    [editor]
+    [value, onChange],
   );
 
   const handleSave = useCallback(() => {
-    // 1. Remap all comment ranges to their current positions in the editor
-    const updatedComments = remapCommentRanges(storedComments);
-
-    // 2. Sync local state so the sidebar immediately reflects the new ranges
-    setStoredComments(updatedComments);
-
-    // 3. Persist updated ranges to the backend for each comment whose range changed
-    updatedComments.forEach((updated: any) => {
-      const original = storedComments.find((c: any) => c.id === updated.id);
-      const rangeChanged =
-        JSON.stringify(original?.range) !== JSON.stringify(updated.range);
-
-      if (rangeChanged && artifactJobID) {
-        dispatch(
-          updateComments({
-            commentId: updated.id,
-            jobId: artifactJobID,
-            range: updated.range,
-          })
-        );
-      }
-    });
-
-    // 4. Notify the parent with both the latest editor content and fresh comment ranges
-    onSaveRef.current?.(editor.children, updatedComments);
-  }, [editor, storedComments, remapCommentRanges, artifactJobID, dispatch]);
+    onSaveRef.current?.(editor.children);
+  }, [editor]);
 
   const handleDiscard = useCallback(() => {
     onDiscardRef.current?.();
@@ -329,7 +254,7 @@ const SlateContentEditor = ({
           data-comment-id={leaf.commentId}
           className={clsx(
             styles.commentHighlight,
-            leaf.isActive && styles.commentHighlightActive
+            leaf.isActive && styles.commentHighlightActive,
           )}
         >
           {children}
@@ -480,7 +405,7 @@ const SlateContentEditor = ({
           );
       }
     },
-    []
+    [],
   );
 
   const handleKeyDown = useCallback(
@@ -501,7 +426,7 @@ const SlateContentEditor = ({
           break;
       }
     },
-    [editor]
+    [editor],
   );
 
   const handleMouseUp = () => {
@@ -565,14 +490,14 @@ const SlateContentEditor = ({
           range,
           text: selection.text,
           position: selection.position,
-        })
+        }),
       );
 
       setSelection(null);
       setActiveRange(null); // clears ref + tempRange → removes temp highlight
       Transforms.deselect(editor);
     },
-    [selection, artifactJobID, addCommentMark, editor, setActiveRange]
+    [selection, artifactJobID, addCommentMark, editor, setActiveRange],
   );
 
   const decorate = useCallback(
@@ -611,7 +536,7 @@ const SlateContentEditor = ({
 
       return ranges;
     },
-    [tempRange, activeCommentId, isShowComments, storedComments]
+    [tempRange, activeCommentId, isShowComments, storedComments],
   );
 
   useEffect(() => {
@@ -674,15 +599,10 @@ const SlateContentEditor = ({
       <div
         className={clsx(
           styles.editorContainer,
-          isShowComments && styles.editorWithComments
+          isShowComments && styles.editorWithComments,
         )}
       >
-        <div
-          className={clsx(
-            styles.editorArea,
-            isShowComments && styles.commentsVisible
-          )}
-        >
+        <div className={clsx(styles.editorArea, isShowComments && styles.commentsVisible)}>
           <Slate
             editor={editor}
             initialValue={editorValue}
